@@ -30,9 +30,13 @@ class DocumentTitleFormatter(BaseFormatter):
         
         # 启用文档网格对齐
         self._enable_snap_to_grid(title_paragraph)
-        
-        # 添加空行
-        doc.paragraphs[1].insert_paragraph_before()
+
+        # 添加空行，并显式清零段前段后，避免继承 docDefaults 中 after=200 的间距
+        blank_paragraph = doc.paragraphs[1].insert_paragraph_before()
+        blank_format = blank_paragraph.paragraph_format
+        blank_format.space_before = Pt(0)
+        blank_format.space_after = Pt(0)
+        self._enable_snap_to_grid(blank_paragraph)
     
     def add_attachment(self, doc: Document, attachment: str):
         """添加附件说明"""

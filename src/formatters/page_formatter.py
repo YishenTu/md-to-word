@@ -14,19 +14,48 @@ class PageFormatter(BaseFormatter):
     def setup_page_format(self, doc: Document):
         """设置页面格式"""
         section = doc.sections[0]
-        
+
         # 设置页边距
         section.top_margin = self.config.PAGE_MARGINS['top']
         section.bottom_margin = self.config.PAGE_MARGINS['bottom']
         section.left_margin = self.config.PAGE_MARGINS['left']
         section.right_margin = self.config.PAGE_MARGINS['right']
-        
+
         # 设置页眉页脚距离
         section.header_distance = Mm(25)
         section.footer_distance = Mm(25)
-        
+
         # 设置文档网格（版芯）
         self._setup_document_grid(section)
+
+        # 清零文档级默认段前段后间距，避免未被格式化器覆盖的空段落继承 after=200
+        self._zero_default_paragraph_spacing(doc)
+
+    def _zero_default_paragraph_spacing(self, doc: Document):
+        """将 styles.xml 中的 docDefaults 段前段后清零。
+
+        Pandoc 默认会在 docDefaults 中写入 <w:spacing w:after="200"/>，
+        导致未被任一格式化器显式设置的段落（如标题后插入的空行）保留 10pt 间距。
+        """
+        styles_element = doc.styles.element
+        doc_defaults = styles_element.find(qn_func('w:docDefaults'))
+        if doc_defaults is None:
+            return
+        p_pr_default = doc_defaults.find(qn_func('w:pPrDefault'))
+        if p_pr_default is None:
+            return
+        p_pr = p_pr_default.find(qn_func('w:pPr'))
+        if p_pr is None:
+            return
+        spacing = p_pr.find(qn_func('w:spacing'))
+        if spacing is None:
+            spacing = OxmlElement('w:spacing')
+            p_pr.append(spacing)
+        spacing.set(qn_func('w:before'), '0')
+        spacing.set(qn_func('w:after'), '0')
+        # 防御性清除自动间距（若启用会忽略显式值）
+        spacing.set(qn_func('w:beforeAutospacing'), '0')
+        spacing.set(qn_func('w:afterAutospacing'), '0')
     
     def add_page_numbers(self, doc: Document):
         """添加页码"""
