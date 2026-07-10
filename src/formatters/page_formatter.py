@@ -2,34 +2,40 @@
 页面格式化器 - 负责页面设置、页眉页脚、页码等
 """
 from docx import Document
-from docx.shared import Mm, Pt
-from docx.oxml.shared import OxmlElement, qn
 from docx.oxml.ns import qn as qn_func
+from docx.oxml.shared import OxmlElement, qn
+from docx.section import Section
+from docx.shared import Emu, Mm, Pt
+
 from .base_formatter import BaseFormatter
 
 
 class PageFormatter(BaseFormatter):
     """页面格式化器 - 负责页面设置、页眉页脚、页码等"""
     
-    def setup_page_format(self, doc: Document):
+    def setup_page_format(self, doc: Document) -> None:
         """设置页面格式"""
-        section = doc.sections[0]
+        for section in doc.sections:
+            self._setup_section_format(section)
 
-        # 设置页边距
+        # 清零文档级默认段前段后间距，避免未被格式化器覆盖的空段落继承 after=200
+        self._zero_default_paragraph_spacing(doc)
+
+    def _setup_section_format(self, section: Section) -> None:
+        """Apply the configured page geometry to one document section."""
+        section.orientation = self.config.PAGE_ORIENTATION
+        section.page_width = self.config.PAGE_SIZE['width']
+        section.page_height = self.config.PAGE_SIZE['height']
+
         section.top_margin = self.config.PAGE_MARGINS['top']
         section.bottom_margin = self.config.PAGE_MARGINS['bottom']
         section.left_margin = self.config.PAGE_MARGINS['left']
         section.right_margin = self.config.PAGE_MARGINS['right']
 
-        # 设置页眉页脚距离
         section.header_distance = Mm(25)
         section.footer_distance = Mm(25)
 
-        # 设置文档网格（版芯）
         self._setup_document_grid(section)
-
-        # 清零文档级默认段前段后间距，避免未被格式化器覆盖的空段落继承 after=200
-        self._zero_default_paragraph_spacing(doc)
 
     def _zero_default_paragraph_spacing(self, doc: Document):
         """将 styles.xml 中的 docDefaults 段前段后清零。
@@ -116,8 +122,9 @@ class PageFormatter(BaseFormatter):
         # 行距：26.5磅 = 530 twips（1磅 = 20 twips）
         line_pitch = 530  # twips
         
-        # 字符间距：版芯宽度156mm ÷ 28字 ≈ 5.57mm ≈ 316 twips
-        char_space = 316  # twips
+        # Derive character pitch from the same page geometry used by images.
+        content_width_twips = Emu(self.config.get_content_width_emu()).twips
+        char_space = round(content_width_twips / self.config.CHARS_PER_LINE)
         
         # 设置行距（单位：twips，1/20点）
         docGrid.set(qn_func('w:linePitch'), str(line_pitch))

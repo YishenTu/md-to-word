@@ -1,10 +1,20 @@
-from docx.shared import Mm, Pt
-from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 import os
 from pathlib import Path
 
+from docx.enum.section import WD_ORIENT
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+from docx.shared import Mm, Pt
+
+
 class DocumentConfig:
     """公文格式配置类，基于GB/T 9704-2012标准"""
+
+    # A4 paper dimensions (units: EMU-backed Length values)
+    PAGE_SIZE = {
+        'width': Mm(210),
+        'height': Mm(297)
+    }
+    PAGE_ORIENTATION = WD_ORIENT.PORTRAIT
     
     # 页面设置 (单位: 毫米)
     PAGE_MARGINS = {
@@ -155,3 +165,11 @@ class DocumentConfig:
         if not cls.IMAGE_CONFIG['search_paths']:
             cls.IMAGE_CONFIG['search_paths'] = cls._build_search_paths()
         return cls.IMAGE_CONFIG['search_paths']
+
+    def get_content_width_emu(self) -> int:
+        """Return the usable page width in English Metric Units (EMU)."""
+        return int(
+            self.PAGE_SIZE['width']
+            - self.PAGE_MARGINS['left']
+            - self.PAGE_MARGINS['right']
+        )

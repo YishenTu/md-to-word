@@ -179,10 +179,7 @@ class ImageFormatter(BaseFormatter):
             # 使用优化的批量查询获取所有图片相关元素
             elements = self.xml_processor.process_image_properties(drawing_element)
             
-            # 计算页面可用宽度 (A4纸宽210mm - 左边距28mm - 右边距26mm = 156mm)
-            # 转换为EMU单位: 1mm = 36000 EMU
-            page_width_mm = 210 - 28 - 26  # 156mm
-            page_width_emu = page_width_mm * 36000  # 5616000 EMU
+            content_width_emu = self.config.get_content_width_emu()
             
             # 获取并更新extent元素
             for extent in elements.get('extent', []):
@@ -197,18 +194,16 @@ class ImageFormatter(BaseFormatter):
                     aspect_ratio = cy_orig_int / cx_orig_int
                     
                     # 设置图片宽度为页面宽度
-                    extent.set('cx', str(page_width_emu))
+                    extent.set('cx', str(content_width_emu))
                     # 按比例计算新高度
-                    extent.set('cy', str(int(page_width_emu * aspect_ratio)))
+                    extent.set('cy', str(int(content_width_emu * aspect_ratio)))
                 except (ValueError, ZeroDivisionError):
                     # 如果转换失败，只设置宽度
-                    extent.set('cx', str(page_width_emu))
+                    extent.set('cx', str(content_width_emu))
             
             # 同时更新pic:spPr中的extent（如果存在）
             pic_extent_xpath = './/pic:spPr/a:xfrm/a:ext'
-            pic_extents = drawing_element.xpath(pic_extent_xpath, 
-                                               namespaces={'pic': 'http://schemas.openxmlformats.org/drawingml/2006/picture',
-                                                          'a': 'http://schemas.openxmlformats.org/drawingml/2006/main'})
+            pic_extents = drawing_element.xpath(pic_extent_xpath)
             for pic_extent in pic_extents:
                 cx_original = pic_extent.get('cx', '3000000')
                 cy_original = pic_extent.get('cy', '2000000')
@@ -218,10 +213,10 @@ class ImageFormatter(BaseFormatter):
                     cy_orig_int = int(cy_original)
                     aspect_ratio = cy_orig_int / cx_orig_int
                     
-                    pic_extent.set('cx', str(page_width_emu))
-                    pic_extent.set('cy', str(int(page_width_emu * aspect_ratio)))
+                    pic_extent.set('cx', str(content_width_emu))
+                    pic_extent.set('cy', str(int(content_width_emu * aspect_ratio)))
                 except (ValueError, ZeroDivisionError):
-                    pic_extent.set('cx', str(page_width_emu))
+                    pic_extent.set('cx', str(content_width_emu))
                     
         except Exception as e:
             # 记录错误但不中断处理
@@ -280,10 +275,7 @@ class ImageFormatter(BaseFormatter):
                 cx_original = extent[0].get('cx') if extent else '3000000'
                 cy_original = extent[0].get('cy') if extent else '2000000'
                 
-                # 计算页面可用宽度 (A4纸宽210mm - 左边距28mm - 右边距26mm = 156mm)
-                # 转换为EMU单位: 1mm = 36000 EMU
-                page_width_mm = 210 - 28 - 26  # 156mm
-                page_width_emu = page_width_mm * 36000  # 5616000 EMU
+                content_width_emu = self.config.get_content_width_emu()
                 
                 # 计算纵横比并根据新宽度计算高度
                 try:
@@ -292,12 +284,12 @@ class ImageFormatter(BaseFormatter):
                     aspect_ratio = cy_orig_int / cx_orig_int
                     
                     # 设置图片宽度为页面宽度
-                    cx = str(page_width_emu)
+                    cx = str(content_width_emu)
                     # 按比例计算新高度
-                    cy = str(int(page_width_emu * aspect_ratio))
+                    cy = str(int(content_width_emu * aspect_ratio))
                 except (ValueError, ZeroDivisionError):
                     # 如果转换失败，使用默认值
-                    cx = str(page_width_emu)
+                    cx = str(content_width_emu)
                     cy = cy_original
                 
                 # 获取docPr信息
