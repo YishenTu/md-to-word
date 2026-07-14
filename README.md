@@ -1,218 +1,134 @@
-# Markdown到Word公文格式转换工具
+# Markdown 到 Word 公文格式转换工具
 
-将Markdown文件转换为符合GB/T 9704-2012《党政机关公文格式》标准的Word文档。
+将正文型 Markdown 转换为 DOCX，并按 GB/T 9704-2012 的核心版式要求统一页面、字体、字号、文档网格、段落、标题和页码。项目面向个人稳定使用，不试图覆盖版记、密级、发文字号等全部可选公文要素。仓库保留一份 [GB/T 9704-2012 参考文件](<docs/GB T 9704 2012.pdf>)，用于离线核对版式条文。
 
-## 功能特点
+## 主要能力
 
-- 符合GB/T 9704-2012国家标准
-- 支持LaTeX数学公式、表格和列表
-- 智能处理Obsidian格式图片
-- 自动设置 A4 纸张（210mm × 297mm）和公文格式（页边距、字体、字号、页码）
+- A4 纵向页面，28 字 × 22 行文档网格，奇偶页页码分别外侧对齐。
+- 中文按内容层级选择小标宋、仿宋、黑体或楷体；所有拉丁字母和数字统一使用 Times New Roman。
+- 支持正文、两级标题、有序与无序列表、表格、LaTeX 数学公式、标准 Markdown 图片和 Obsidian 图片。
+- 自动处理附件说明、正文分页符、图片说明，以及单一机关盖章公文的署名和成文日期。
+- 通过临时文件生成、DOCX 重新打开验证和原子替换，避免失败时覆盖已有输出。
 
 ## 安装
 
-### 系统要求
-- Python 3.6+
-- Pandoc（必须）：[安装说明](https://pandoc.org/installing.html)
-
-### 安装依赖
-```bash
-pip3 install -r requirements.txt
-```
-
-## 项目结构
-
-```
-md-to-word/
-├── src/                         # 源代码目录
-│   ├── __init__.py
-│   ├── core/                    # 核心处理模块
-│   │   ├── __init__.py
-│   │   ├── markdown_preprocessor.py
-│   │   ├── pandoc_processor.py
-│   │   └── word_postprocessor.py
-│   ├── formatters/              # 格式化器模块
-│   │   ├── __init__.py
-│   │   ├── base_formatter.py
-│   │   ├── document_title_formatter.py
-│   │   ├── image_formatter.py
-│   │   ├── list_formatter.py
-│   │   ├── page_formatter.py
-│   │   ├── paragraph_formatter.py
-│   │   └── table_formatter.py
-│   ├── utils/                   # 工具模块
-│   │   ├── __init__.py
-│   │   ├── config_validator.py
-│   │   ├── constants.py
-│   │   ├── exceptions.py
-│   │   ├── path_validator.py
-│   │   └── xpath_cache.py
-│   └── config/                  # 配置模块
-│       ├── __init__.py
-│       └── config.py
-├── docs/                        # 文档目录
-│   ├── architecture.md          # 架构文档
-│   ├── configuration.md         # 配置指南
-│   └── security.md              # 安全策略
-├── examples/                    # 示例文件
-│   ├── example.md
-│   └── example.docx
-├── filters/                     # Pandoc过滤器
-│   └── chinese_filter.lua
-├── md_to_word.py               # 主程序入口
-├── requirements.txt            # Python依赖
-├── README.md                   # 项目说明
-├── CLAUDE.md                   # 项目状态记录
-└── LICENSE                     # MIT许可证
-```
-
-## 配置说明
-
-### 环境变量配置
-
-本工具支持通过环境变量配置 Obsidian 相关路径，方便在不同环境下使用。支持的环境变量包括：
-
-- `OBSIDIAN_VAULT_NAME` - Obsidian Vault 名称
-- `OBSIDIAN_ATTACHMENTS_FOLDER` - 附件文件夹名称  
-- `OBSIDIAN_VAULT_PATH` - Vault 完整路径
-
-详细配置说明请查看 [配置指南](docs/configuration.md)。
-
-### 代码配置
-
-可在 `src/config/config.py` 中调整以下设置：
-- 字体和字号配置
-- A4 纸张和页边距设置
-- 图片处理选项
-- Pandoc转换参数
-
-### 安全性
-
-- 命令注入防护：使用 `subprocess.run([arg1, arg2, ...])` 的列表参数方式，避免 shell 解析
-- 路径遍历防护：验证所有文件路径，防止目录遍历攻击
-- XML注入防护：使用安全的XML API构建元素
-
-## 使用方法
+需要 Python 3.11 或更高版本，以及可从 `PATH` 调用的 [Pandoc](https://pandoc.org/installing.html)。运行依赖安装命令如下：
 
 ```bash
-# 基本用法
-python3 md_to_word.py document.md
-
-# 指定输出文件
-python3 md_to_word.py input.md -o output.docx
-
-# 非交互覆盖已存在输出
-python3 md_to_word.py input.md -o output.docx --force
-
-# 使用自定义 Obsidian Vault
-OBSIDIAN_VAULT_NAME="我的笔记" python3 md_to_word.py document.md
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-## 输入验证和支持说明
+先检查环境，再转换文件：
 
-### 支持的输入格式
+```bash
+python md_to_word.py --check-config
+python md_to_word.py input.md -o output.docx
+```
 
-#### 文件类型要求
-- **支持的文件扩展名**：`.md`、`.markdown`
-- **文件编码**：UTF-8（推荐），工具会自动处理UTF-8编码的文件
-- **文件位置**：支持任意路径的Markdown文件（绝对路径或相对路径）
+输出文件存在时，CLI 默认询问是否覆盖；自动化环境可增加 `--force`。使用 `-v` 可输出调试日志。仓库中的自包含示例可用 `python3 md_to_word.py examples/公文格式示例.md -o /tmp/md-to-word-example.docx --force` 直接转换。
 
-#### 文件大小限制
-- **无硬性文件大小限制**：工具设计用于处理各种大小的文档
-- **性能考虑**：大型文档（>10MB）可能需要更长的处理时间
-- **内存使用**：处理超大文档时可能需要更多系统内存
+## Markdown 编写约定
 
-### 路径要求
+### 文档标题与层级标题
 
-#### 输入文件路径
-- **支持绝对路径**：`/Users/username/Documents/document.md`
-- **支持相对路径**：`./document.md`、`../docs/document.md`
-- **自动创建输出目录**：如果输出路径的目录不存在，工具会自动创建
+输出文档标题来自 Markdown 文件名，不依赖 YAML frontmatter。单个一级标题会被忽略，以免和文件名标题重复；存在多个一级标题时，转换器会将标题层级下移。常规输入建议使用：
 
-#### 图片路径支持
-- **相对路径**：相对于Markdown文件的路径
-- **绝对路径**：完整的文件系统路径
-- **Obsidian格式**：`![[filename]]`（无需路径，自动搜索）
-- **自动搜索路径**（按优先级）：
-  1. Markdown文件所在目录
-  2. Obsidian附件目录（可配置）
-  3. `./images`目录
-  4. `./assets`目录
-  5. 当前工作目录
+- `##` 表示一级标题，使用三号黑体。
+- `###` 表示二级标题，使用三号楷体。
+- 更深层级按三号仿宋正文处理。
+- 正文和层级标题的段前、段后均为 0，并对齐正文网格；文件名标题使用二号小标宋和独立的精确行距。
 
-### 支持的Markdown功能
+YAML frontmatter 是可选的。存在时会被过滤，不会出现在 Word 中，也不负责驱动落款识别。
 
-#### 完全支持的功能
-- **标题**：`##`（一级）、`###`（二级），其他级别作为正文处理
-- **段落**：标准段落文本，自动应用首行缩进
-- **列表**：
-  - 无序列表：`-`、`*`（自动转换为`-`）
-  - 有序列表：自动转换为正文格式，保持编号
-  - 多级列表：支持缩进的嵌套列表
-- **表格**：标准Markdown表格语法，自动格式化
-- **图片**：
-  - 标准格式：`![alt text](image.png)`
-  - Obsidian格式：`![[image.png]]`
-  - 支持格式：PNG、JPG、JPEG、GIF、BMP、SVG、WEBP
-- **数学公式**：
-  - 行内公式：`$E=mc^2$`
-  - 块级公式：`$$E=mc^2$$`
-  - 使用MathML渲染，支持完整LaTeX语法
-- **加粗文本**：`**text**`或`__text__`（自动去除加粗标记）
-- **代码块**：保留但不应用特殊格式
-- **引用块**：`>`开头的引用文本
+### 列表
 
-#### 自动处理的元素
-- **YAML Front Matter**：自动过滤，不出现在输出中
-- **结尾元数据**：Date、标签等元数据自动过滤
-- **文件名标题**：使用文件名作为文档标题
-- **一级标题（#）**：自动跳过，不影响文档结构
-- **图片标题**：智能处理，移除文件名，保留有意义的描述
+有序列表会转换为带可见编号的普通正文段落，从而避免 Word 或 WPS 自动编号产生不稳定的缩进与字体。无序列表的 `-` 和 `*` 会转换为 Word 原生项目符号列表：标记统一为 `•`，换行使用悬挂对齐，嵌套层级每级右移两个正文字符。
 
-#### 限制和注意事项
-- **不支持的Markdown扩展**：
-  - 脚注
-  - 任务列表（`- [ ]`）
-  - 定义列表
-  - HTML内嵌代码
-- **标题层级限制**：只识别二级（##）和三级（###）标题，更深层级作为正文
-- **表格限制**：不支持跨行或跨列的复杂表格
-- **代码高亮**：代码块保留但不应用语法高亮
+### 附件说明
 
-### 图片格式要求
+附件按自然 Markdown 编写即可：`附件：` 独占一行，空一行后依次写 `1.`、`2.`、`3.`。转换器会将各项合并到同一附件说明段落，用硬换行保留条目，并自动对齐第二条及后续序号；不要手工添加全角空格、制表符或行尾空格。
 
-#### 支持的图片格式
-- **位图格式**：PNG、JPG、JPEG、GIF、BMP、WEBP
-- **矢量格式**：SVG（转换时可能栅格化）
-- **文件名**：支持中文、英文、数字、下划线、连字符
-- **无扩展名文件**：自动尝试匹配支持的格式
+例如：
 
-#### 图片处理特性
-- **自动全宽显示**：图片自动调整为页面全宽（156mm）
-- **保持纵横比**：自动计算高度，确保图片不变形
-- **居中对齐**：所有图片自动水平居中
-- **文字环绕**：默认Top and Bottom模式（可配置）
-- **智能标题**：自动清理图片文件名，保留有意义的描述
+> 附件：
+>
+> 1. Example implementation plan
+> 2. Project detail table
+> 3. Acceptance checklist
 
-## 格式说明
+转换器还会确保附件说明前恰好有一个对齐文档网格的空行。
 
-### 标题层级
-- `##` → 一级标题（黑体）
-- `###` → 二级标题（楷体）
-- 其他 → 正文（仿宋）
+### 落款与成文日期
 
-### 支持的Markdown元素
-- 数学公式：`$E=mc^2$`、`$$E=mc^2$$`
-- 表格：标准Markdown表格语法
-- 列表：有序列表自动转为正文格式
-- 图片：支持`![]()`和`![[]]`格式
+单一机关盖章公文可在 Markdown 最后写署名和日期，不需要 frontmatter：
 
-## 版本信息
+> The final body paragraph.
+>
+> Example Municipal Government Office
+> 2026-07-14
 
-**v2.4.0**（2025-07-24）
-- 修复有序列表和多级编号处理问题
-- 确保字体格式统一
+识别条件是：日期为最后一个非空行，署名紧邻日期，署名前有一个用于分隔正文的空行。日期接受 ISO 形式或不补零的中文形式。转换器会在落款前生成两个正文网格空行，将日期规范为中文形式并右空四字，再让署名以日期为准居中编排。这里只处理文字位置，不插入印章图片。
 
-## 许可
+### 图片与说明
 
-MIT License
+支持标准 Markdown 图片和 Obsidian 图片。相对路径优先基于 Markdown 源文件目录解析，再查找配置的 Obsidian 路径、`images`、`assets` 和当前目录。图片按版心全宽缩放并保持纵横比；图片锚点段落会压缩，因此图片和 caption 之间不产生额外空行。找不到本地图片时转换失败，不发布不完整文档。
+
+### 分页与其他元素
+
+正文中的独立 `---`、`***` 或 `___` 会转换为分页符。文件开头成对的 `---` 仍按 YAML frontmatter 边界处理。表格和公式由 Pandoc 转换后再统一格式化；复杂跨行、跨列表格、脚注、任务列表、定义列表和内嵌 HTML 不属于稳定支持范围。代码块和引用可由 Pandoc 保留，但没有专门的公文样式。
+
+## 配置
+
+集中配置位于 `src/config/config.py`，包括页面、页边距、字体、字号、文档网格、列表、表格、图片和 Pandoc 参数。默认关键值如下：
+
+- 页面：A4 纵向；上 34.58 mm、下 32.58 mm、左 28 mm、右 26 mm。
+- 网格：每行 28 字、每页 22 行；正文行距 10.39 mm，文档标题行距 12.51 mm。
+- 字号：文档标题二号，正文与层级标题三号，表格及图片说明四号，页码四号。
+- 段落：正文首行缩进 2 字；段前、段后均为 0。
+
+Obsidian 路径可通过以下环境变量覆盖：
+
+- `OBSIDIAN_VAULT_PATH`：Vault 的绝对路径。
+- `OBSIDIAN_VAULT_NAME`：供自动发现使用的 Vault 名称。
+- `OBSIDIAN_ATTACHMENTS_FOLDER`：Vault 内的附件目录名。
+
+完整说明见[配置指南](docs/configuration.md)。Word 和 WPS 会替换本机未安装的字体；要获得可重复的输出，应在转换机器上安装配置字体，或将字体名改为该环境中可用的等价字体。
+
+## 输入、输出与失败行为
+
+- 输入扩展名支持 `.md`、`.markdown`、`.mdown`、`.mkd` 和 `.mdwn`，编码应为 UTF-8，文件上限为 100 MB。
+- 输入和输出可使用绝对或相对路径；输出目录不存在时会自动创建。
+- 输出固定为 `.docx`；指定其他后缀时会自动改为 `.docx`。
+- 生成与后处理在目标目录的临时文件中完成。只有文件能被 `python-docx` 重新打开时才原子替换目标文件。
+- Pandoc、图片、格式化或验证失败时，已有输出保持不变，临时文件会被清理。
+
+安全边界和威胁模型见[安全说明](docs/security.md)，模块职责见[架构说明](docs/architecture.md)。
+
+## 开发与 CI
+
+安装固定版本的开发工具：
+
+```bash
+python -m pip install -r requirements.txt -r requirements-dev.txt
+```
+
+提交前运行与 CI 相同的检查：
+
+```bash
+ruff check .
+ruff format --check .
+mypy
+pip-audit -r requirements.txt
+python md_to_word.py --check-config
+python -m unittest discover -v
+```
+
+GitHub Actions 在每次 push、pull request 和手工触发时运行。质量任务使用 Python 3.14 执行 Ruff、mypy 和依赖漏洞审计；测试任务在 Python 3.11 与 3.14 上安装 Pandoc、检查配置并运行全部 `unittest`。依赖 Pandoc 的本地测试在 Pandoc 不可用时自动跳过。
+
+项目结构按职责划分：`src/core/` 编排转换流程，`src/parsers/` 解析与 DOCX 无关的 Markdown 结构，`src/formatters/` 负责 Word/OpenXML 呈现，`src/config/` 保存配置，`src/utils/` 提供验证与公共工具，`tests/` 包含单元和端到端测试，`examples/` 保持自包含。
+
+## 版本与许可
+
+当前版本为 **v2.7.0**，采用 [MIT License](LICENSE)。

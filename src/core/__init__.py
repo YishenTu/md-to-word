@@ -6,8 +6,4 @@ from .markdown_preprocessor import MarkdownPreprocessor
 from .pandoc_processor import PandocProcessor
 from .word_postprocessor import WordPostprocessor
 
-__all__ = [
-    'MarkdownPreprocessor',
-    'PandocProcessor',
-    'WordPostprocessor'
-]
+__all__ = ['MarkdownPreprocessor', 'PandocProcessor', 'WordPostprocessor']

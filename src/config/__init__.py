@@ -5,6 +5,4 @@ Config module - 配置模块
 
 from .config import DocumentConfig
 
-__all__ = [
-    'DocumentConfig'
-]
+__all__ = ['DocumentConfig']

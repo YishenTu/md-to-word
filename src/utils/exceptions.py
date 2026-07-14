@@ -5,30 +5,35 @@
 
 class Md2WordError(Exception):
     """Markdown到Word转换的基础异常类"""
-    pass
 
+    pass
 
 
 class FileProcessingError(Md2WordError):
     """文件处理相关错误"""
+
     pass
 
 
 class PandocError(Md2WordError):
     """Pandoc处理相关错误"""
+
     pass
 
 
 class ImageProcessingError(Md2WordError):
     """图片处理相关错误"""
+
     pass
 
 
 class XMLProcessingError(Md2WordError):
     """XML处理相关错误"""
+
     pass
 
 
 class PathSecurityError(Md2WordError):
     """路径安全相关错误"""
+
     pass

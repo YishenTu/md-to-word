@@ -1,7 +1,8 @@
 """
 页面格式化器 - 负责页面设置、页眉页脚、页码等
 """
-from docx import Document
+
+from docx.document import Document
 from docx.oxml.ns import qn as qn_func
 from docx.oxml.shared import OxmlElement, qn
 from docx.section import Section
@@ -12,7 +13,7 @@ from .base_formatter import BaseFormatter
 
 class PageFormatter(BaseFormatter):
     """页面格式化器 - 负责页面设置、页眉页脚、页码等"""
-    
+
     def setup_page_format(self, doc: Document) -> None:
         """设置页面格式"""
         for section in doc.sections:
@@ -62,72 +63,90 @@ class PageFormatter(BaseFormatter):
         # 防御性清除自动间距（若启用会忽略显式值）
         spacing.set(qn_func('w:beforeAutospacing'), '0')
         spacing.set(qn_func('w:afterAutospacing'), '0')
-    
+
     def add_page_numbers(self, doc: Document):
-        """添加页码"""
-        section = doc.sections[0]
-        footer = section.footer
-        
-        # 清除现有内容
-        footer.paragraphs[0].clear()
-        
-        # 添加页码
+        """Add mirrored odd/even page numbers required by the official format."""
+        doc.settings.odd_and_even_pages_header_footer = True
+
+        for section in doc.sections:
+            self._configure_page_number_footer(
+                section.footer,
+                self.config.ALIGNMENTS['right'],
+                right_indent=Pt(16),
+            )
+            self._configure_page_number_footer(
+                section.even_page_footer,
+                self.config.ALIGNMENTS['left'],
+                left_indent=Pt(16),
+            )
+
+    def _configure_page_number_footer(
+        self,
+        footer,
+        alignment,
+        left_indent=None,
+        right_indent=None,
+    ):
+        """Configure one footer with a PAGE field and one-character side margins."""
         paragraph = footer.paragraphs[0]
-        paragraph.alignment = self.config.ALIGNMENTS['center']
-        
-        run = paragraph.add_run("- ")
-        run.font.name = self.config.FONTS['fangsong']
+        paragraph.clear()
+        paragraph.alignment = alignment
+        paragraph_format = paragraph.paragraph_format
+        paragraph_format.left_indent = left_indent
+        paragraph_format.right_indent = right_indent
+        paragraph_format.first_line_indent = Pt(0)
+        paragraph_format.space_before = Pt(0)
+        paragraph_format.space_after = Pt(0)
+
+        leading_run = paragraph.add_run('— ')
+        self._format_page_number_run(leading_run)
+
+        field_run = paragraph.add_run()
+        field_begin = OxmlElement('w:fldChar')
+        field_begin.set(qn('w:fldCharType'), 'begin')
+        instruction = OxmlElement('w:instrText')
+        instruction.set(qn('xml:space'), 'preserve')
+        instruction.text = ' PAGE '
+        field_separator = OxmlElement('w:fldChar')
+        field_separator.set(qn('w:fldCharType'), 'separate')
+        cached_value = OxmlElement('w:t')
+        cached_value.text = '1'
+        field_end = OxmlElement('w:fldChar')
+        field_end.set(qn('w:fldCharType'), 'end')
+        for element in (field_begin, instruction, field_separator, cached_value, field_end):
+            field_run._r.append(element)
+        self._format_page_number_run(field_run)
+
+        trailing_run = paragraph.add_run(' —')
+        self._format_page_number_run(trailing_run)
+
+    def _format_page_number_run(self, run):
+        """Apply the configured Chinese size-four Song typeface to a page-number run."""
         run.font.size = self.config.FONT_SIZES['page_num']
-        self._set_chinese_font(run, self.config.FONTS['fangsong'])
-        
-        # 插入页码字段
-        fldChar1 = OxmlElement('w:fldChar')
-        fldChar1.set(qn('w:fldCharType'), 'begin')
-        
-        instrText = OxmlElement('w:instrText')
-        instrText.set(qn('xml:space'), 'preserve')
-        instrText.text = 'PAGE'
-        
-        fldChar2 = OxmlElement('w:fldChar')
-        fldChar2.set(qn('w:fldCharType'), 'end')
-        
-        run2 = paragraph.add_run()
-        run2._r.append(fldChar1)
-        run2._r.append(instrText)
-        run2._r.append(fldChar2)
-        run2.font.name = self.config.FONTS['fangsong']
-        run2.font.size = self.config.FONT_SIZES['page_num']
-        self._set_chinese_font(run2, self.config.FONTS['fangsong'])
-        
-        run3 = paragraph.add_run(" -")
-        run3.font.name = self.config.FONTS['fangsong']
-        run3.font.size = self.config.FONT_SIZES['page_num']
-        self._set_chinese_font(run3, self.config.FONTS['fangsong'])
-    
+        self._set_run_fonts(run, self.config.FONTS['songti'])
+
     def _setup_document_grid(self, section):
         """设置文档网格以强制每页22行、每行28字"""
         sectPr = section._sectPr
-        
+
         # 检查是否已有docGrid元素
         docGrid = sectPr.find(qn_func('w:docGrid'))
         if docGrid is None:
             # 创建新的docGrid元素
             docGrid = OxmlElement('w:docGrid')
             sectPr.append(docGrid)
-        
+
         # 设置文档网格类型为"行和字符网格"
         docGrid.set(qn_func('w:type'), 'linesAndChars')
-        
-        # 设置行距和字符间距
-        # 行距：26.5磅 = 530 twips（1磅 = 20 twips）
-        line_pitch = 530  # twips
-        
-        # Derive character pitch from the same page geometry used by images.
+
+        # The electronic-document standard defines a body line independently
+        # from the software page-margin box. Do not derive it from page height.
+        line_pitch = self.config.BODY_LINE_PITCH.twips
         content_width_twips = Emu(self.config.get_content_width_emu()).twips
         char_space = round(content_width_twips / self.config.CHARS_PER_LINE)
-        
+
         # 设置行距（单位：twips，1/20点）
         docGrid.set(qn_func('w:linePitch'), str(line_pitch))
-        
+
         # 设置字符间距（单位：twips）
         docGrid.set(qn_func('w:charSpace'), str(char_space))

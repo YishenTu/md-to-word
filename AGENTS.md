@@ -1,35 +1,39 @@
 # Repository Guidelines
 
-## Project Structure & Modules
-- `src/core/`: Orchestrates the pipeline (`MarkdownPreprocessor` → `PandocProcessor` → `WordPostprocessor`).
-- `src/formatters/`: Specialized formatters (page, paragraph, title, table, list, image, base).
-- `src/utils/`: Utilities and guards (config/path validators, constants, exceptions, XPath cache).
-- `src/config/`: Tunable settings used across processors.
-- `md_to_word.py`: CLI entry point. `docs/` architecture and security notes. `examples/` sample inputs.
+## Architecture
 
-## Build, Test, and Dev Commands
-- Create venv (optional): `python3 -m venv venv && source venv/bin/activate`.
-- Install deps: `pip3 install -r requirements.txt`.
-- Config check only: `python3 md_to_word.py --check-config`.
-- Convert example: `python3 md_to_word.py examples/example.md -o examples/example.docx`.
-- Verbose debug: `python3 md_to_word.py input.md -o out.docx -v --force`.
+- `src/core/` orchestrates `MarkdownPreprocessor` → `PandocProcessor` → `WordPostprocessor`.
+- `src/parsers/` extracts structured Markdown data without depending on DOCX APIs.
+- `src/formatters/` owns Word layout and OpenXML formatting by document element type.
+- `src/config/` contains shared layout settings; `src/utils/` contains validation, exceptions, and reusable helpers.
+- `md_to_word.py` owns CLI policy and atomic output publication; `examples/` must remain self-contained.
 
-## Coding Style & Naming
-- Follow PEP 8 (4-space indents, 120-col soft wrap). Use type hints where practical.
-- Names: modules/files `snake_case`, classes `PascalCase`, functions/vars `snake_case`, constants `UPPER_SNAKE` (see `src/utils/constants.py`).
-- Keep processors small and composable; add logic via new formatter classes rather than bloating existing ones.
-- Exceptions: raise project-specific ones from `src/utils/exceptions.py`.
+Keep processors composable. Put Markdown interpretation in preprocessors or parsers and Word presentation in formatters. Internal control tokens must be explicit, narrowly scoped, and removed by the consuming pipeline stage; structured data such as signatures belongs in metadata instead of text markers.
 
-## Testing Guidelines
-- No formal test suite yet. For manual checks: run on `examples/example.md` and confirm `.docx` is produced and opens correctly.
-- When adding tests, prefer `pytest` in `tests/` with `test_*.py`. Use small Markdown fixtures; assert CLI exit codes and file creation; avoid binary `.docx` diffs.
+## Style and maintenance
 
-## Commit & Pull Requests
-- Use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:` (see `git log`). Imperative, present tense, concise scope.
-- PRs should include: purpose/motivation, key changes, run commands used for validation, screenshots of resulting Word output when UI-visible changes apply, and links to related issues.
-- Update `docs/` if behavior/config changes; note security implications.
+- Target Python 3.11+, four-space indentation, and a 120-column limit.
+- Follow Ruff formatting and lint rules from `pyproject.toml`; use type hints for new or changed interfaces.
+- Use `snake_case` for modules, functions, and variables; `PascalCase` for classes; `UPPER_SNAKE_CASE` for constants.
+- Raise project-specific exceptions from `src/utils/exceptions.py` at pipeline boundaries.
+- Update `README.md` and relevant files in `docs/` whenever input contracts, configuration, layout, CI, or failure behavior changes.
+- Use Conventional Commits when asked to commit: `feat:`, `fix:`, `docs:`, `refactor:`, or `chore:`.
 
-## Security & Configuration Tips
-- Pandoc is required; ensure it’s installed and callable. Never build shell strings—use `subprocess.run([...])` as in `PandocProcessor`.
-- Validate all paths with existing helpers; forbid traversal (`..`) and unsafe targets.
-- Respect env vars `OBSIDIAN_VAULT_NAME`, `OBSIDIAN_ATTACHMENTS_FOLDER`, `OBSIDIAN_VAULT_PATH` (see `docs/configuration.md`); don’t hardcode local paths.
+## Validation
+
+- Install development tools: `python -m pip install -r requirements.txt -r requirements-dev.txt`.
+- Run lint and formatting checks: `ruff check .` and `ruff format --check .`.
+- Run type checking: `mypy`.
+- Audit runtime dependencies: `pip-audit -r requirements.txt`.
+- Check the runtime environment: `python md_to_word.py --check-config`.
+- Run all tests: `python -m unittest discover -v`.
+- Convert the bundled example and visually inspect the result after layout changes.
+
+Test DOCX behavior through OpenXML properties rather than binary diffs. Pandoc-dependent tests skip automatically when Pandoc is unavailable; keep all other tests independent of external applications. GitHub Actions is the authoritative cross-version check for Python 3.11 and 3.14.
+
+## Security
+
+- Invoke Pandoc with an argument list through `subprocess.run`; never build shell command strings.
+- Normalize paths with the existing validators. Apply a resolved-path boundary only when an operation has an explicit base directory.
+- Treat missing local assets and Pandoc warnings as conversion failures; never silently publish incomplete output.
+- Respect the Obsidian environment variables documented in `docs/configuration.md`; never hardcode machine-specific paths.

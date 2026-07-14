@@ -1,21 +1,24 @@
-from docx import Document
-from docx.shared import Inches, Pt
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from typing import Dict, Any, List
 import os
-import re
-import logging
+from pathlib import Path
+from typing import Any
+
+from docx import Document
+from docx.document import Document as DocxDocument
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches
 
 from ..config import DocumentConfig
-from ..utils.constants import Patterns
 from ..formatters import (
-    PageFormatter, 
-    ParagraphFormatter, 
-    DocumentTitleFormatter, 
-    TableFormatter, 
-    ListFormatter, 
-    ImageFormatter
+    DocumentTitleFormatter,
+    ImageFormatter,
+    ListFormatter,
+    PageFormatter,
+    ParagraphFormatter,
+    SignatureFormatter,
+    TableFormatter,
 )
+from ..utils.constants import Patterns
+from ..utils.exceptions import FileProcessingError, ImageProcessingError
 
 
 class WordPostprocessor:
@@ -23,17 +26,17 @@ class WordPostprocessor:
     重构后的Word文档后处理器
     使用组合模式，将不同的格式化功能委托给专门的格式化器类
     解决了原有的"God Object"反模式问题
-    
+
     特别处理：包含数学公式的图片caption
     - 检测包含LaTeX数学公式的caption（如 $\\theta$, $\\omega$）
     - 使用特殊的分离处理逻辑，避免破坏MathML内容
     - 通过元素属性标记已处理的caption，防止重复处理
     """
-    
+
     def __init__(self):
         self.config = DocumentConfig()
-        self.doc = None
-        
+        self._doc: DocxDocument | None = None
+
         # 初始化专门的格式化器
         self.page_formatter = PageFormatter(self.config)
         self.paragraph_formatter = ParagraphFormatter(self.config)
@@ -41,42 +44,52 @@ class WordPostprocessor:
         self.table_formatter = TableFormatter(self.config)
         self.list_formatter = ListFormatter(self.config)
         self.image_formatter = ImageFormatter(self.config)
-    
-    def apply_formatting(self, docx_path: str, metadata: Dict[str, Any], original_markdown: str = None) -> str:
+        self.signature_formatter = SignatureFormatter(self.config)
+
+    @property
+    def doc(self) -> DocxDocument:
+        """Return the active document after the formatting pipeline has started."""
+        if self._doc is None:
+            raise FileProcessingError('Word postprocessing has no active document')
+        return self._doc
+
+    @doc.setter
+    def doc(self, value: DocxDocument) -> None:
+        self._doc = value
+
+    def apply_formatting(
+        self,
+        docx_path: str,
+        metadata: dict[str, Any],
+        source_dir: str | Path | None = None,
+    ) -> str:
         """
         对pandoc生成的Word文档应用公文格式
-        
+
         Args:
             docx_path: pandoc生成的Word文档路径
-            metadata: 包含标题、附件等元数据的字典
-            original_markdown: 原始markdown内容，用于判断列表层级
-            
+            metadata: Document metadata containing the title
+            source_dir: Markdown source directory used to resolve relative assets
+
         Returns:
             处理后的Word文档路径
         """
         # 加载pandoc生成的文档
         self.doc = Document(docx_path)
-        
-        # 保存原始markdown用于列表层级判断
-        self.original_markdown = original_markdown
-        
+
         # 保存文档路径的目录，用于查找图片
         self.doc_dir = os.path.dirname(os.path.abspath(docx_path))
-        
+        self.source_dir = os.path.abspath(str(source_dir)) if source_dir else self.doc_dir
+
         # 使用专门的格式化器处理不同方面的格式化
         self.page_formatter.setup_page_format(self.doc)
-        
+
         self.paragraph_formatter.format_document_content(self.doc, metadata)
-        
+
         # 添加文档标题（如果有）
         if metadata.get('title'):
             self.title_formatter.add_document_title(self.doc, metadata['title'])
-        
-        # 添加附件说明
-        if metadata.get('attachments'):
-            for attachment in metadata['attachments']:
-                self.title_formatter.add_attachment(self.doc, attachment)
-        
+
         # 应用各种格式化
         self.page_formatter.add_page_numbers(self.doc)
         self.list_formatter.format_lists(self.doc)
@@ -87,19 +100,27 @@ class WordPostprocessor:
 
         # 新的图片处理方式：直接查找并替换图片语法
         self.process_and_insert_images()
-        
+        self.image_formatter.format_images(self.doc)
+
+        if metadata.get('signatory'):
+            self.signature_formatter.add_signature(
+                self.doc,
+                metadata['signatory'],
+                metadata['document_date'],
+            )
+
         # 保存格式化后的文档
         self.doc.save(docx_path)
         return docx_path
-    
+
     def _has_math_formula(self, paragraph) -> bool:
         """检测段落是否包含数学公式"""
         return self.image_formatter._has_math_formula(paragraph)
 
     def _process_page_breaks(self):
         """处理 [PAGEBREAK] 标记，转换为实际分页符"""
-        from docx.oxml.ns import qn
         from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
 
         for paragraph in self.doc.paragraphs:
             if paragraph.text.strip() == '[PAGEBREAK]':
@@ -112,48 +133,27 @@ class WordPostprocessor:
                 br.set(qn('w:type'), 'page')
                 run._element.append(br)
 
-    def format_tables(self):
-        """格式化表格（向后兼容方法）"""
-        if self.doc:
-            self.table_formatter.format_tables(self.doc)
-    
-    def format_lists(self):
-        """格式化列表（向后兼容方法）"""
-        if self.doc:
-            self.list_formatter.format_lists(self.doc)
-    
-    def format_images(self):
-        """格式化图片（向后兼容方法）"""
-        if self.doc:
-            self.image_formatter.format_images(self.doc)
-    
     def process_and_insert_images(self):
         """处理文档中的图片语法并插入实际图片"""
         # 初始化已处理的数学caption文本集合
-        self._processed_math_caption_texts = set()
-        
+        self._processed_math_caption_texts: set[str] = set()
+
         # 使用预编译的模式
-        markdown_image_pattern = Patterns.MARKDOWN_IMAGE_PATTERN
         obsidian_image_pattern = Patterns.OBSIDIAN_IMAGE_PATTERN
         caption_pattern = Patterns.CAPTION_PREFIX_PATTERN
-        
-        # 图片计数器
-        image_counter = 0
+
         # 收集需要处理的图片信息
-        images_to_process = []
-        
+        images_to_process: list[dict[str, Any]] = []
+
         # 第一遍：识别所有图片和caption
         all_paragraphs = list(self.doc.paragraphs)
-        for i, paragraph in enumerate(all_paragraphs):
+        for paragraph in all_paragraphs:
             text = paragraph.text.strip()
-            
+
             # 仅处理 Obsidian 图片语法，标准 Markdown 图片交由 pandoc 处理
-            markdown_match = None
             obsidian_match = obsidian_image_pattern.search(text)
-            
+
             if obsidian_match:
-                image_counter += 1
-                
                 # 检查是否在同一段落包含caption
                 caption_in_same_para = None
                 if obsidian_match:
@@ -161,297 +161,162 @@ class WordPostprocessor:
                     image_syntax_end = obsidian_match.end()
                     remaining_text = text[image_syntax_end:].strip()
                     image_path = obsidian_match.group(1)
-                    # 确定标题
-                    if 'Pasted image' in image_path:
-                        alt_text = ""  # 空标题，不显示
-                    else:
-                        alt_text = os.path.splitext(os.path.basename(image_path))[0]
-                    image_type = 'obsidian'
-                    
                     # 检查剩余文本是否为caption
                     if remaining_text and caption_pattern.match(remaining_text):
                         caption_in_same_para = remaining_text
-                
-                # 检查下一段落是否为caption（跳过空行）
-                caption_paragraph = None
-                for j in range(i + 1, min(i + 3, len(all_paragraphs))):  # 最多检查后面2个段落
-                    next_text = all_paragraphs[j].text.strip()
-                    if not next_text:  # 跳过空段落
-                        continue
-                    if caption_pattern.match(next_text):
-                        caption_paragraph = all_paragraphs[j]
-                        break
-                    else:
-                        break  # 遇到非空、非caption段落就停止
-                
+
                 # 查找图片实际路径
                 actual_path = self._find_image_actual_path(image_path)
-                
+                if actual_path is None:
+                    raise ImageProcessingError(f'Image referenced by Obsidian syntax was not found: {image_path}')
+
                 # 构建图片信息
                 image_info = {
                     'path': actual_path,
-                    'title': alt_text,
-                    'type': image_type,
-                    'original': text,
-                    'number': image_counter,
                     'paragraph': paragraph,
                     'caption_in_same_para': caption_in_same_para,
-                    'caption_paragraph': caption_paragraph
                 }
-                
+
                 images_to_process.append(image_info)
-        
+
         # 第二遍：处理图片插入
         for image_info in images_to_process:
             self._replace_paragraph_with_image(image_info['paragraph'], image_info)
-        
-        # 清理残留的图片alt文本段落
-        try:
-            alt_texts = set([
-                info.get('title', '').strip() for info in images_to_process if info.get('title')
-            ])
-            if alt_texts:
-                for paragraph in list(self.doc.paragraphs):
-                    txt = paragraph.text.strip()
-                    if txt and txt in alt_texts and not self._has_math_formula(paragraph):
-                        # 清空而不破坏版式
-                        paragraph.clear()
-        except Exception:
-            pass
-        
+
         # 第三遍：处理caption格式化
         self._process_captions()
-    
-    def _find_image_actual_path(self, image_path: str) -> str:
+
+    def _find_image_actual_path(self, image_path: str) -> str | None:
         """查找图片的实际路径"""
-        # 如果是绝对路径或URL，直接返回
-        if os.path.isabs(image_path) or image_path.startswith(('http://', 'https://')):
-            return image_path
-        
-        # 在配置的搜索路径中查找图片
-        from pathlib import Path
-        
+        # Absolute local paths do not require search-path resolution.
+        if os.path.isabs(image_path):
+            return image_path if os.path.isfile(image_path) else None
+
+        # Remote Obsidian embeds are intentionally unsupported because
+        # python-docx cannot insert them without a separate download policy.
+        if image_path.startswith(('http://', 'https://')):
+            return None
+
         # 构建搜索路径列表
         search_paths = [
-            self.doc_dir,  # 首先在源文件目录查找
-            *DocumentConfig.get_image_search_paths()  # 然后在配置的搜索路径中查找
+            self.source_dir,
+            self.doc_dir,
+            *DocumentConfig.get_image_search_paths(),  # 然后在配置的搜索路径中查找
         ]
-        
+
         # 支持的图片格式
         supported_formats = DocumentConfig.IMAGE_CONFIG['supported_formats']
-        
+
         for search_path_str in search_paths:
-            search_path = Path(search_path_str).resolve()
+            search_path = Path(search_path_str).expanduser().resolve()
             if not search_path.exists() or not search_path.is_dir():
                 continue
-            
+
             try:
                 # 构建目标图片路径
                 image_path_obj = (search_path / image_path).resolve()
-                
+
                 # 直接匹配文件名
                 if image_path_obj.is_file():
                     return str(image_path_obj)
-                
+
                 # 如果没有扩展名，尝试添加支持的格式
                 if not image_path_obj.suffix:
                     for ext in supported_formats:
                         path_with_ext = image_path_obj.with_suffix(ext)
                         if path_with_ext.is_file():
                             return str(path_with_ext)
-                            
+
             except (OSError, ValueError):
                 continue
-        
+
         return None
-    
-    def _replace_paragraph_with_image(self, paragraph, image_info: Dict):
+
+    def _replace_paragraph_with_image(self, paragraph, image_info: dict):
         """将包含图片语法的段落替换为实际图片"""
-        try:
-            # 检查图片路径是否存在
-            if not image_info['path'] or not os.path.exists(image_info['path']):
-                # 如果图片不存在，保留原文本
-                return
-            
-            # 检查段落是否包含数学公式
-            has_math = self._has_math_formula(paragraph)
-            
-            # 如果包含数学公式，需要特殊处理（优先处理）
-            if has_math:
-                # 分离处理：在当前段落前插入图片段落，保留原段落作为caption
-                self._insert_image_before_math_caption(paragraph, image_info)
-                return
-            
-            # 处理同一段落中的caption分离（只在没有数学公式时处理）
-            if image_info.get('caption_in_same_para'):
-                # 在当前段落后插入caption段落
-                p_element = paragraph._element
-                parent = p_element.getparent()
-                
-                # 创建caption段落
-                caption_p = self.doc.add_paragraph()
-                caption_p.text = image_info['caption_in_same_para']
-                
-                # 将caption段落移动到图片段落之后
-                parent.insert(parent.index(p_element) + 1, caption_p._element)
-            
-            # 如果没有数学公式，可以安全地清空段落
-            paragraph.clear()
-            
-            # 添加图片到段落
-            run = paragraph.add_run()
-            picture = run.add_picture(image_info['path'], width=Inches(5))  # 默认宽度5英寸
-            
-            # 设置段落居中
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            # 设置图片文字环绕
-            drawing_elements = run._element.xpath('.//w:drawing')
-            if drawing_elements:
-                self.image_formatter._set_image_wrap(drawing_elements[0])
-                
-        except Exception as e:
-            # 保留原始文本
-            paragraph.text = image_info['original']
-    
-    def _remove_image_syntax_only(self, paragraph, image_info: Dict):
-        """只移除图片语法部分，保留其他内容（包括数学公式）"""
-        try:
-            # 获取原始文本
-            original_text = paragraph.text
-            
-            # 移除图片语法部分
-            # 移除 Obsidian 格式 ![[filename]]
-            cleaned_text = Patterns.OBSIDIAN_IMAGE_CLEANUP_PATTERN.sub('', original_text)
-            # 移除 Markdown 格式 ![alt](path)
-            cleaned_text = Patterns.MARKDOWN_IMAGE_CLEANUP_PATTERN.sub('', cleaned_text)
-            
-            # 清理多余的空格
-            cleaned_text = Patterns.WHITESPACE_CLEANUP_PATTERN.sub(' ', cleaned_text).strip()
-            
-            # 只有当清理后的文本确实不同时才更新
-            if cleaned_text != original_text:
-                
-                # 需要更精细地处理，避免破坏MathML
-                # 遍历段落中的运行，只修改文本部分
-                for run in paragraph.runs:
-                    if run.text:
-                        # 检查这个运行是否包含图片语法
-                        if '![[' in run.text or '![' in run.text:
-                            # 清理这个运行中的图片语法
-                            new_run_text = Patterns.OBSIDIAN_IMAGE_CLEANUP_PATTERN.sub('', run.text)
-                            new_run_text = Patterns.MARKDOWN_IMAGE_CLEANUP_PATTERN.sub('', new_run_text)
-                            new_run_text = Patterns.WHITESPACE_CLEANUP_PATTERN.sub(' ', new_run_text).strip()
-                            
-                            if new_run_text != run.text:
-                                run.text = new_run_text
-                                
-        except Exception as e:
-            logging.warning(f"移除图片语法时出错: {e}")
-    
-    def _insert_image_before_math_caption(self, caption_paragraph, image_info: Dict):
-        """在包含数学公式的caption前插入图片段落"""
-        try:
-            # 创建新的图片段落
-            p_element = caption_paragraph._element
+        if not image_info['path'] or not os.path.exists(image_info['path']):
+            raise ImageProcessingError(f'Image file is unavailable: {image_info["path"]}')
+
+        if self._has_math_formula(paragraph):
+            self._insert_image_before_math_caption(paragraph, image_info)
+            return
+
+        if image_info.get('caption_in_same_para'):
+            p_element = paragraph._element
             parent = p_element.getparent()
-            
-            # 在当前段落前创建图片段落
-            image_p = self.doc.add_paragraph()
-            
-            # 添加图片到新段落
-            run = image_p.add_run()
-            picture = run.add_picture(image_info['path'], width=Inches(5))
-            
-            # 设置图片段落居中
-            image_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            # 设置图片文字环绕
-            drawing_elements = run._element.xpath('.//w:drawing')
-            if drawing_elements:
-                self.image_formatter._set_image_wrap(drawing_elements[0])
-            
-            # 将图片段落移动到caption段落前面
-            parent.insert(parent.index(p_element), image_p._element)
-            
-            # 清理caption段落中的图片语法，但保留数学公式
-            self._remove_image_syntax_only(caption_paragraph, image_info)
-            
-            # 记录处理后的caption文本，用于跳过重复处理
-            cleaned_text = caption_paragraph.text.strip()
-            if cleaned_text:
-                self._processed_math_caption_texts.add(cleaned_text)
-            
-            # 直接格式化这个caption，因为它包含数学公式
-            self.image_formatter._format_image_caption(caption_paragraph)
-            
-        except Exception as e:
-            # 降级处理：只移除图片语法
-            self._remove_image_syntax_only(caption_paragraph, image_info)
-    
+            caption_p = self.doc.add_paragraph()
+            caption_p.text = image_info['caption_in_same_para']
+            parent.insert(parent.index(p_element) + 1, caption_p._element)
+
+        paragraph.clear()
+        run = paragraph.add_run()
+        run.add_picture(image_info['path'], width=Inches(5))
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        drawing_elements = run._element.xpath('.//w:drawing')
+        if not drawing_elements:
+            raise ImageProcessingError(f'Inserted image has no drawing element: {image_info["path"]}')
+        self.image_formatter._set_image_wrap(drawing_elements[0])
+
+    def _remove_image_syntax_only(self, paragraph):
+        """只移除图片语法部分，保留其他内容（包括数学公式）"""
+        original_text = paragraph.text
+        cleaned_text = Patterns.OBSIDIAN_IMAGE_CLEANUP_PATTERN.sub('', original_text)
+        cleaned_text = Patterns.MARKDOWN_IMAGE_CLEANUP_PATTERN.sub('', cleaned_text)
+        cleaned_text = Patterns.WHITESPACE_CLEANUP_PATTERN.sub(' ', cleaned_text).strip()
+
+        if cleaned_text == original_text:
+            return
+
+        for run in paragraph.runs:
+            if run.text and ('![[' in run.text or '![' in run.text):
+                new_run_text = Patterns.OBSIDIAN_IMAGE_CLEANUP_PATTERN.sub('', run.text)
+                new_run_text = Patterns.MARKDOWN_IMAGE_CLEANUP_PATTERN.sub('', new_run_text)
+                run.text = Patterns.WHITESPACE_CLEANUP_PATTERN.sub(' ', new_run_text).strip()
+
+    def _insert_image_before_math_caption(self, caption_paragraph, image_info: dict):
+        """在包含数学公式的caption前插入图片段落"""
+        p_element = caption_paragraph._element
+        parent = p_element.getparent()
+        image_p = self.doc.add_paragraph()
+        run = image_p.add_run()
+        run.add_picture(image_info['path'], width=Inches(5))
+        image_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        drawing_elements = run._element.xpath('.//w:drawing')
+        if not drawing_elements:
+            raise ImageProcessingError(f'Inserted image has no drawing element: {image_info["path"]}')
+        self.image_formatter._set_image_wrap(drawing_elements[0])
+        parent.insert(parent.index(p_element), image_p._element)
+        self._remove_image_syntax_only(caption_paragraph)
+
+        cleaned_text = caption_paragraph.text.strip()
+        if cleaned_text:
+            self._processed_math_caption_texts.add(cleaned_text)
+        self.image_formatter._format_image_caption(caption_paragraph)
+
     def _process_captions(self):
         """格式化所有图片和表格caption（位置已在预处理阶段调整）"""
-        try:
-            # 使用统一的caption识别模式
-            caption_pattern = Patterns.CAPTION_PATTERN
-            
-            # 格式化所有caption，不再处理位置
-            for paragraph in self.doc.paragraphs:
-                text = paragraph.text.strip()
-                if not text:
-                    continue
-                
-                # 检查是否是已处理的数学caption，跳过避免重复处理
-                if hasattr(self, '_processed_math_caption_texts') and text in self._processed_math_caption_texts:
-                    continue
-                
-                # 检查是否匹配caption模式
-                caption_match = caption_pattern.match(text)
-                if caption_match:
-                    caption_type = caption_match.group(1)
-                    number = caption_match.group(2)
-                    content = caption_match.group(3)
-                    
-                    # 检查是否包含数学公式
-                    has_math = self._has_math_formula(paragraph)
-                    
-                    # 标准化格式（仅在没有数学公式时替换文本）
-                    if not has_math:
-                        if caption_type in ['图', '图片', '图表']:
-                            paragraph.text = f"图{number}. {content}"
-                        else:
-                            paragraph.text = f"表{number}. {content}"
-                    
-                    # 应用格式
-                    if caption_type in ['图', '图片', '图表']:
-                        self.image_formatter._format_image_caption(paragraph)
-                    else:
-                        self._format_table_caption(paragraph)
-            
-        except Exception as e:
-            logging.error(f"处理caption时出错: {e}", exc_info=True)
-    
-    def _format_table_caption(self, paragraph):
-        """格式化表格caption，与图片caption相同的格式"""
-        try:
-            # 使用与图片caption相同的格式设置
-            for run in paragraph.runs:
-                run.font.name = self.config.FONTS['fangsong']
-                run.font.size = self.config.FONT_SIZES['table']  # 4号字体
-                run.bold = False
-                # 设置中文字体
-                from docx.oxml.ns import qn
-                run._element.rPr.rFonts.set(qn('w:eastAsia'), self.config.FONTS['fangsong'])
-            
-            # 设置段落格式 - 表格caption居中显示
-            paragraph.alignment = self.config.ALIGNMENTS['center']
-            paragraph_format = paragraph.paragraph_format
-            paragraph_format.space_after = Pt(0)
-            paragraph_format.space_before = Pt(0)
-            paragraph_format.first_line_indent = Pt(0)  # caption不缩进
-            
-        except AttributeError as e:
-            logging.debug(f"格式化表格caption时遇到属性错误: {e}")
-        except Exception as e:
-            logging.warning(f"格式化表格caption时出错: {e}")
-    
+        caption_pattern = Patterns.CAPTION_PATTERN
+        for paragraph in self.doc.paragraphs:
+            text = paragraph.text.strip()
+            if not text or text in self._processed_math_caption_texts:
+                continue
+
+            caption_match = caption_pattern.match(text)
+            if not caption_match:
+                continue
+
+            caption_type = caption_match.group(1)
+            number = caption_match.group(2)
+            content = caption_match.group(3)
+            has_math = self._has_math_formula(paragraph)
+
+            if not has_math:
+                prefix = '图' if caption_type in ['图', '图片', '图表'] else '表'
+                paragraph.text = f'{prefix}{number}. {content}'
+
+            if caption_type in ['图', '图片', '图表']:
+                self.image_formatter._format_image_caption(paragraph)
+            else:
+                self.table_formatter.format_caption(paragraph)

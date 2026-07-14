@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.mypy_cache/
+.ruff_cache/
 *.so
 .Python
 build/
@@ -39,10 +41,16 @@ MANIFEST
 ehthumbs.db
 Thumbs.db
 
-# Examples folder (not needed in repository)
-examples/
+# Track the self-contained smoke-test example while ignoring local examples.
+examples/*
+!examples/公文格式示例.md
+!examples/assets/
+examples/assets/*
+!examples/assets/project-workflow.png
+!examples/assets/project-review.png
 
 # Virtual environment
+.venv/
 venv/
 env/
 ENV/
