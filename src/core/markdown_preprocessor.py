@@ -1,3 +1,4 @@
+import html
 import os
 import re
 from pathlib import Path
@@ -75,12 +76,23 @@ class MarkdownPreprocessor:
         lines = self._skip_first_level_headers(lines)
         lines = self._convert_ordered_lists_to_text(lines)
         lines = self._convert_hr_to_pagebreak(lines)
+        lines = self._escape_obsidian_embeds_for_pandoc(lines)
         lines = self._restore_fenced_code_blocks(lines, fenced_blocks)
 
         # 重新组合内容
         processed_content = '\n'.join(lines)
 
         return processed_content.strip()
+
+    @staticmethod
+    def _escape_obsidian_embeds_for_pandoc(lines: list[str]) -> list[str]:
+        """Keep Obsidian image syntax as literal text across Pandoc versions."""
+
+        def replace_embed(match: re.Match[str]) -> str:
+            escaped_path = html.escape(match.group(1), quote=False)
+            return f'!&#91;&#91;{escaped_path}&#93;&#93;'
+
+        return [Patterns.OBSIDIAN_IMAGE_PATTERN.sub(replace_embed, line) for line in lines]
 
     def _protect_fenced_code_blocks(self, lines: list[str]) -> tuple[list[str], dict[str, list[str]]]:
         """Replace fenced code blocks with opaque placeholders during preprocessing."""

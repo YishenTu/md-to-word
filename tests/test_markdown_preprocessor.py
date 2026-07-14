@@ -31,6 +31,13 @@ class TestMarkdownPreprocessor(unittest.TestCase):
             result,
         )
 
+    def test_obsidian_embeds_are_entity_escaped_for_pandoc(self):
+        source = '![[assets/review&approval.png]]'
+
+        result = self.preprocessor.preprocess_content(source)
+
+        self.assertEqual('!&#91;&#91;assets/review&amp;approval.png&#93;&#93;', result)
+
     def test_attachment_mentions_and_declarations_remain_body_content(self):
         source = '正文提到附件另发。\n\n附件：1. 实施方案\n附件: 2. 数据表'
 
