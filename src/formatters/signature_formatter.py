@@ -1,17 +1,19 @@
 import re
+from collections.abc import Callable
 from decimal import Decimal
 
 from docx.document import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Pt, RGBColor
+from docx.text.paragraph import Paragraph
 
 from ..utils.exceptions import FileProcessingError
 from .base_formatter import BaseFormatter
 
 
 class SignatureFormatter(BaseFormatter):
-    """Append a single-authority signatory and date for stamped documents."""
+    """Render a single-authority signatory and date for stamped documents."""
 
     DATE_PATTERN = re.compile(r'^\d{4}\u5e74\d{1,2}\u6708\d{1,2}\u65e5$')
     DATE_SIDE_BLANK_CHARS = Decimal('4')
@@ -21,13 +23,31 @@ class SignatureFormatter(BaseFormatter):
     SPACING_LINES = 2
 
     def add_signature(self, doc: Document, signatory: str, document_date: str) -> None:
-        """Append adjacent signatory and date paragraphs in one centered layout area."""
+        """Append adjacent signatory and date paragraphs."""
+        self._render_signature(doc.add_paragraph, signatory, document_date)
+
+    def replace_signature_anchor(
+        self,
+        anchor: Paragraph,
+        signatory: str,
+        document_date: str,
+    ) -> None:
+        """Replace one position-only anchor with adjacent signatory and date paragraphs."""
+        self._render_signature(anchor.insert_paragraph_before, signatory, document_date)
+        anchor._element.getparent().remove(anchor._element)
+
+    def _render_signature(
+        self,
+        paragraph_factory: Callable[[], Paragraph],
+        signatory: str,
+        document_date: str,
+    ) -> None:
         left_indent_chars = self._calculate_left_indent_chars(document_date)
 
         for _ in range(self.SPACING_LINES):
-            self._add_blank_grid_line(doc)
+            self._format_blank_grid_line(paragraph_factory())
 
-        signatory_paragraph = doc.add_paragraph()
+        signatory_paragraph = paragraph_factory()
         self._add_formatted_run(signatory_paragraph, signatory)
         self._format_signature_paragraph(
             signatory_paragraph,
@@ -35,7 +55,7 @@ class SignatureFormatter(BaseFormatter):
             keep_with_next=True,
         )
 
-        date_paragraph = doc.add_paragraph()
+        date_paragraph = paragraph_factory()
         self._add_formatted_run(date_paragraph, document_date)
         self._format_signature_paragraph(
             date_paragraph,
@@ -44,8 +64,7 @@ class SignatureFormatter(BaseFormatter):
         )
         self._enable_number_spacing(date_paragraph)
 
-    def _add_blank_grid_line(self, doc: Document) -> None:
-        paragraph = doc.add_paragraph()
+    def _format_blank_grid_line(self, paragraph: Paragraph) -> None:
         paragraph.alignment = self.config.ALIGNMENTS['left']
         paragraph_format = paragraph.paragraph_format
         paragraph_format.left_indent = Pt(0)

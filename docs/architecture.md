@@ -17,11 +17,11 @@ Markdown file
 
 ### Markdown input stage
 
-`SignatureBlockParser` inspects only the strict document tail. When it finds an unambiguous signatory and date, it removes those lines from the Markdown body and returns normalized metadata. The parser has no dependency on `python-docx`; this keeps Markdown grammar separate from presentation logic.
+`SignatureBlockParser` inspects only the strict terminal document region after note metadata is removed. It accepts a signatory and date either at the body end or immediately before a terminal attachment declaration. When it finds an unambiguous block, it moves the values into normalized metadata and leaves one position-only signature anchor in the Markdown body. The parser has no dependency on `python-docx`; this keeps Markdown grammar separate from presentation logic.
 
 `MarkdownPreprocessor` handles transformations required by this output profile: optional frontmatter and ending metadata removal, attachment normalization, caption positioning, list normalization, heading policy, and body separators. Fenced code blocks are opaque during these transforms, and Markdown soft breaks remain Pandoc's responsibility.
 
-Body separators become one explicit page-break sentinel. That sentinel is consumed and removed by `WordPostprocessor`; structured values such as signature metadata never travel as hidden body text.
+Body separators and signature positions become explicit, narrowly scoped control tokens. `WordPostprocessor` consumes and removes both. The signature anchor carries no document values; the structured signatory and date remain in metadata.
 
 ### Pandoc stage
 
@@ -39,7 +39,7 @@ The Markdown source directory is passed as a Pandoc resource path so standard re
 4. `ListFormatter` and `TableFormatter` normalize native Word structures.
 5. The postprocessor consumes page-break sentinels and resolves Obsidian image syntax.
 6. `ImageFormatter` sizes images, applies wrapping, and collapses anchor paragraphs before captions.
-7. `SignatureFormatter` renders normalized signature metadata as Word paragraphs.
+7. `SignatureFormatter` replaces the consumed signature anchor with normalized Word paragraphs at the authored position.
 
 `BaseFormatter` owns shared run-font and document-grid helpers. All run formatting assigns a Chinese font and also assigns Times New Roman to the Latin font slots, regardless of content level.
 
@@ -56,7 +56,7 @@ The CLI writes to a staging DOCX in the destination directory. It completes Pand
 - The CLI owns user interaction, input limits, output-path policy, and atomic publication.
 - Missing local assets are errors and are never silently omitted.
 
-The parser and formatter for signatures deliberately remain separate. Merging them would couple tail-recognition rules to OpenXML layout and make both harder to test or replace.
+The parser and formatter for signatures deliberately remain separate. The parser owns terminal-region recognition and authored position; the formatter owns OpenXML layout. Merging them would couple Markdown grammar to Word presentation and make both harder to test or replace.
 
 ## Testing and CI
 

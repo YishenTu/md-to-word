@@ -62,7 +62,7 @@ Write `附件：` on its own line, followed by a blank line and a contiguous ord
 
 ### Stamped-document signature
 
-Provide a single authority and document date at the end of the Markdown body:
+Provide a single authority and document date either at the end of the Markdown body or immediately before a terminal attachment declaration:
 
 ```markdown
 The final body paragraph.
@@ -71,9 +71,9 @@ Example Municipal Government Office
 2026-07-14
 ```
 
-The date must be the final non-empty line, the signatory must be immediately above it, and a blank line must separate the signature block from prior body content. The date accepts ISO or Chinese syntax and is emitted without zero-padded month or day values. A `Date` field in YAML frontmatter remains filtered note metadata and does not create a signature block.
+The signatory must be the nearest non-empty line above the date, and a blank line must separate the signature block from prior body content. Blank lines between the signatory and date are accepted and normalized during conversion. The date must be the final body line or be followed only by a terminal attachment declaration. Trailing `---`, single-word tags such as `#work`, and `Date:` note metadata are removed before signature recognition. The date accepts ISO or Chinese syntax and is emitted without zero-padded month or day values. A `Date` field in YAML frontmatter remains filtered note metadata and does not create a signature block.
 
-The converter inserts two body-grid blank lines before the generated signatory and keeps the spacing lines, signatory, and date together across pagination. The date is placed four body-character cells from the right edge. The signatory is centered against the date by sharing its character-grid layout region. Only text positioning is generated; no seal image is inserted or sized.
+The converter preserves the authored order between the signature and attachment declaration. It inserts two body-grid blank lines before the generated signatory and keeps the spacing lines, signatory, and date together across pagination. The date is placed four body-character cells from the right edge. The signatory is centered against the date by sharing its character-grid layout region. Only text positioning is generated; no seal image is inserted or sized.
 
 ## Images
 

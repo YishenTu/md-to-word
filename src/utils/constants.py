@@ -6,6 +6,13 @@
 import re
 
 
+class ControlTokens:
+    """Reserved position-only tokens shared by Markdown and Word pipeline stages."""
+
+    PAGE_BREAK = '[PAGEBREAK]'
+    SIGNATURE = '[MD_TO_WORD_SIGNATURE]'
+
+
 # 正则表达式模式 - 预编译提高性能
 class Patterns:
     """预编译的正则表达式模式集合"""
@@ -40,6 +47,11 @@ class Patterns:
     # 多级编号模式
     MULTI_LEVEL_NUMBER_PATTERN = re.compile(r'^(\d+\.\d+(?:\.\d+)*)\s+(.+)$')  # 2.1.1 内容
     SIMPLE_ORDERED_LIST_WITH_CONTENT = re.compile(r'^(\s*)(\d+)\.\s+(.+)$')  # 1. 内容（捕获内容）
+
+    # 附件说明模式
+    ATTACHMENT_HEADER_PATTERN = re.compile(r'^\s*附件[:：]\s*$')
+    ATTACHMENT_INLINE_PATTERN = re.compile(r'^\s*附件[:：]\s*\d+\.\s+.+?\s*$')
+    ATTACHMENT_ITEM_PATTERN = re.compile(r'^\s*(\d+)\.\s+(.+?)\s*$')
 
     # 图片语法清理模式
     OBSIDIAN_IMAGE_CLEANUP_PATTERN = re.compile(r'!\[\[[^\]]+\]\]')  # 清理 ![[filename]]

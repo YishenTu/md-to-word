@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from src.core.markdown_preprocessor import MarkdownPreprocessor
+from src.utils.constants import ControlTokens
 
 
 class TestSignatureBlockParser(unittest.TestCase):
@@ -25,7 +26,62 @@ class TestSignatureBlockParser(unittest.TestCase):
             '2026\u5e747\u670814\u65e5',
             result['document_date'],
         )
-        self.assertEqual('Body.', result['content'])
+        self.assertEqual(f'Body.\n\n{ControlTokens.SIGNATURE}', result['content'])
+
+    def test_allows_blank_lines_between_signatory_and_date(self):
+        source = 'Body.\n\nExample Authority\n\n2026-07-14'
+
+        result = self._preprocess_file(source)
+
+        self.assertEqual('Example Authority', result['signatory'])
+        self.assertEqual('2026\u5e747\u670814\u65e5', result['document_date'])
+        self.assertEqual(f'Body.\n\n{ControlTokens.SIGNATURE}', result['content'])
+
+    def test_extracts_signature_before_a_terminal_attachment_declaration(self):
+        source = (
+            'Body.\n\n'
+            'Example Authority\n'
+            '2026-07-14\n\n'
+            '附件：\n\n'
+            '1. Implementation plan\n'
+            '2. Acceptance checklist\n\n'
+            '---\n'
+            '#work\n'
+        )
+
+        result = self._preprocess_file(source)
+
+        self.assertEqual('Example Authority', result['signatory'])
+        self.assertEqual('2026\u5e747\u670814\u65e5', result['document_date'])
+        self.assertEqual(
+            (
+                f'Body.\n\n{ControlTokens.SIGNATURE}\n\n'
+                '附件：1. Implementation plan  \n'
+                '\u3000\u3000\u30002. Acceptance checklist'
+            ),
+            result['content'],
+        )
+
+    def test_trailing_note_metadata_is_removed_before_final_signature_detection(self):
+        source = 'Body.\n\nExample Authority\n2026-07-14\n\n---\n#work\n'
+
+        result = self._preprocess_file(source)
+
+        self.assertEqual('Example Authority', result['signatory'])
+        self.assertEqual('2026\u5e747\u670814\u65e5', result['document_date'])
+        self.assertNotIn('#work', result['content'])
+        self.assertTrue(result['content'].endswith(ControlTokens.SIGNATURE))
+
+    def test_extracts_signature_before_a_compact_terminal_attachment_declaration(self):
+        source = 'Body.\n\nExample Authority\n2026-07-14\n\n附件：1. Implementation plan'
+
+        result = self._preprocess_file(source)
+
+        self.assertEqual('Example Authority', result['signatory'])
+        self.assertEqual(
+            f'Body.\n\n{ControlTokens.SIGNATURE}\n\n附件：1. Implementation plan',
+            result['content'],
+        )
 
     def test_frontmatter_date_remains_ignored_metadata(self):
         result = self._preprocess_file('---\nDate: 2026-07-14\n---\n\nBody.')
@@ -52,6 +108,14 @@ class TestSignatureBlockParser(unittest.TestCase):
             with self.subTest(source=source):
                 result = self._preprocess_file(source)
                 self.assertNotIn('signatory', result)
+
+    def test_does_not_scan_for_a_signature_before_arbitrary_trailing_content(self):
+        source = 'Body.\n\nExample Authority\n2026-07-14\n\nAdditional body content.'
+
+        result = self._preprocess_file(source)
+
+        self.assertNotIn('signatory', result)
+        self.assertIn('Example Authority\n2026-07-14', result['content'])
 
 
 if __name__ == '__main__':

@@ -1,9 +1,11 @@
 import re
 from datetime import date
 
+from ..utils.constants import ControlTokens, Patterns
+
 
 class SignatureBlockParser:
-    """Extract an unambiguous signatory and date block from the document tail."""
+    """Extract an unambiguous signatory and date block from the terminal document region."""
 
     ISO_DATE_PATTERN = re.compile(r'^(\d{4})-(\d{2})-(\d{2})$')
     CHINESE_DATE_PATTERN = re.compile(r'^(\d{4})\u5e74(\d{1,2})\u6708(\d{1,2})\u65e5$')
@@ -12,33 +14,85 @@ class SignatureBlockParser:
     MAX_SIGNATORY_LENGTH = 50
 
     def parse(self, content: str) -> tuple[str, dict[str, str]]:
-        """Remove and return a strict final signatory/date block when present."""
+        """Replace a strict signature block with its position anchor and return its values."""
         lines = content.split('\n')
         last_index = self._last_nonempty_index(lines)
         if last_index is None or last_index == 0:
             return content, {}
 
-        normalized_date = self._normalize_document_date(lines[last_index].strip())
-        if normalized_date is None:
-            return content, {}
+        date_indices = [last_index]
+        attachment_start = self._terminal_attachment_start(lines, last_index)
+        if attachment_start is not None:
+            preceding_index = self._previous_nonempty_index(lines, attachment_start - 1)
+            if preceding_index is not None:
+                date_indices.append(preceding_index)
 
-        signatory_index = last_index - 1
+        for date_index in date_indices:
+            parsed = self._parse_signature_at(lines, date_index)
+            if parsed is not None:
+                return parsed
+
+        return content, {}
+
+    def _parse_signature_at(self, lines: list[str], date_index: int) -> tuple[str, dict[str, str]] | None:
+        normalized_date = self._normalize_document_date(lines[date_index].strip())
+        if normalized_date is None or date_index == 0:
+            return None
+
+        signatory_index = self._previous_nonempty_index(lines, date_index - 1)
+        if signatory_index is None:
+            return None
+
         signatory = lines[signatory_index].strip()
         if not self._is_valid_signatory(signatory):
-            return content, {}
+            return None
 
         if signatory_index > 0 and lines[signatory_index - 1].strip():
-            return content, {}
+            return None
 
-        body = '\n'.join(lines[:signatory_index]).rstrip()
+        body_lines = lines.copy()
+        body_lines[signatory_index : date_index + 1] = [ControlTokens.SIGNATURE]
+        body = '\n'.join(body_lines).rstrip()
         return body, {
             'signatory': signatory,
             'document_date': normalized_date,
         }
 
+    def _terminal_attachment_start(self, lines: list[str], last_index: int) -> int | None:
+        for header_index in range(last_index, -1, -1):
+            if self._is_terminal_attachment(lines, header_index, last_index):
+                return header_index
+        return None
+
     @staticmethod
-    def _last_nonempty_index(lines: list[str]):
+    def _is_terminal_attachment(lines: list[str], header_index: int, last_index: int) -> bool:
+        header = lines[header_index]
+        if Patterns.ATTACHMENT_HEADER_PATTERN.fullmatch(header):
+            item_index = header_index + 1
+            while item_index <= last_index and not lines[item_index].strip():
+                item_index += 1
+            if item_index > last_index:
+                return False
+        elif Patterns.ATTACHMENT_INLINE_PATTERN.fullmatch(header):
+            item_index = header_index + 1
+        else:
+            return False
+
+        return all(
+            Patterns.ATTACHMENT_ITEM_PATTERN.fullmatch(lines[index]) is not None
+            for index in range(item_index, last_index + 1)
+        )
+
+    @staticmethod
+    def _last_nonempty_index(lines: list[str]) -> int | None:
         for index in range(len(lines) - 1, -1, -1):
+            if lines[index].strip():
+                return index
+        return None
+
+    @staticmethod
+    def _previous_nonempty_index(lines: list[str], start_index: int) -> int | None:
+        for index in range(start_index, -1, -1):
             if lines[index].strip():
                 return index
         return None
@@ -50,7 +104,7 @@ class SignatureBlockParser:
             return False
         return self.SENTENCE_PUNCTUATION_PATTERN.search(value) is None
 
-    def _normalize_document_date(self, value: str):
+    def _normalize_document_date(self, value: str) -> str | None:
         match = self.ISO_DATE_PATTERN.fullmatch(value)
         if match is None:
             match = self.CHINESE_DATE_PATTERN.fullmatch(value)

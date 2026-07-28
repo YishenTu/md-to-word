@@ -9,6 +9,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 
 from md_to_word import convert_document
+from src.utils.constants import ControlTokens
 
 PANDOC_AVAILABLE = shutil.which('pandoc') is not None
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -49,25 +50,31 @@ class TestBundledExamples(unittest.TestCase):
         snap_to_grid = attachment_spacing._element.pPr.find(qn('w:snapToGrid'))
         self.assertIsNotNone(snap_to_grid)
         self.assertEqual('true', snap_to_grid.get(qn('w:val')))
-        self.assertNotEqual('', document.paragraphs[attachment_index - 2].text)
         signatory_text = '\u793a\u4f8b\u67d0\u67d0\u5730\u533a\u67d0\u67d0\u5b57\u53f7\u6709\u9650\u516c\u53f8'
         document_date = '2026\u5e747\u670814\u65e5'
-        signature_spacing = document.paragraphs[attachment_index + 1 : attachment_index + 3]
+        signatory_index = texts.index(signatory_text)
+        date_index = texts.index(document_date)
+        self.assertLess(signatory_index, attachment_index)
+        self.assertEqual(signatory_index + 1, date_index)
+        self.assertEqual(date_index + 2, attachment_index)
+        signature_spacing = document.paragraphs[signatory_index - 2 : signatory_index]
         self.assertEqual(['', ''], [paragraph.text for paragraph in signature_spacing])
         for paragraph in signature_spacing:
             snap_to_grid = paragraph._element.pPr.find(qn('w:snapToGrid'))
             self.assertEqual('true', snap_to_grid.get(qn('w:val')))
 
-        self.assertEqual(signatory_text, document.paragraphs[attachment_index + 3].text)
-        self.assertEqual(document_date, document.paragraphs[attachment_index + 4].text)
-        for paragraph in document.paragraphs[attachment_index + 3 : attachment_index + 5]:
+        self.assertEqual(signatory_text, document.paragraphs[signatory_index].text)
+        self.assertEqual(document_date, document.paragraphs[date_index].text)
+        for paragraph in document.paragraphs[signatory_index : date_index + 1]:
             self.assertEqual(WD_ALIGN_PARAGRAPH.CENTER, paragraph.alignment)
             indent = paragraph._element.pPr.find(qn('w:ind'))
             self.assertEqual('1225', indent.get(qn('w:leftChars')))
         self.assertEqual(
             'true',
-            document.paragraphs[attachment_index + 4]._element.pPr.find(qn('w:autoSpaceDN')).get(qn('w:val')),
+            document.paragraphs[date_index]._element.pPr.find(qn('w:autoSpaceDN')).get(qn('w:val')),
         )
+        self.assertNotIn(ControlTokens.SIGNATURE, texts)
+        self.assertNotIn('#example', texts)
         self.assertIn('图1. 项目实施流程 Project workflow', texts)
         self.assertIn('图2. 项目评估与数据复核 Project review', texts)
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..parsers import SignatureBlockParser
-from ..utils.constants import Patterns
+from ..utils.constants import ControlTokens, Patterns
 from ..utils.exceptions import FileProcessingError, PathSecurityError
 
 
@@ -19,8 +19,8 @@ class MarkdownPreprocessor:
     FENCE_START_PATTERN = re.compile(r'^( {0,3})(`{3,}|~{3,})(.*)$')
     FENCE_PLACEHOLDER_PREFIX = '\ue000MD_TO_WORD_FENCE_'
     FENCE_PLACEHOLDER_SUFFIX = '\ue001'
-    ATTACHMENT_HEADER_PATTERN = re.compile(r'^\s*附件[:：]\s*$')
-    ATTACHMENT_ITEM_PATTERN = re.compile(r'^\s*(\d+)\.\s+(.+?)\s*$')
+    ATTACHMENT_HEADER_PATTERN = Patterns.ATTACHMENT_HEADER_PATTERN
+    ATTACHMENT_ITEM_PATTERN = Patterns.ATTACHMENT_ITEM_PATTERN
 
     def __init__(self):
         self.signature_block_parser = SignatureBlockParser()
@@ -47,10 +47,11 @@ class MarkdownPreprocessor:
         filename = os.path.basename(safe_path)
         title_from_filename = os.path.splitext(filename)[0]
 
-        body_content, document_fields = self.signature_block_parser.parse(content)
+        lines = self._filter_document_boundaries(content.split('\n'))
+        body_content, document_fields = self.signature_block_parser.parse('\n'.join(lines))
 
         # 预处理内容
-        processed_content = self.preprocess_content(body_content, file_path)
+        processed_content = self._preprocess_lines(body_content.split('\n'))
 
         result = {
             'title': title_from_filename,
@@ -61,11 +62,11 @@ class MarkdownPreprocessor:
 
     def preprocess_content(self, content: str, file_path: str = '') -> str:
         """预处理Markdown内容"""
-        lines = content.split('\n')
+        lines = self._filter_document_boundaries(content.split('\n'))
+        return self._preprocess_lines(lines)
 
-        # Apply document-boundary filters before protecting opaque Markdown blocks.
-        lines = self._filter_yaml_frontmatter(lines)
-        lines = self._filter_ending_metadata(lines)
+    def _preprocess_lines(self, lines: list[str]) -> str:
+        """Apply structural Markdown transforms after document boundaries are filtered."""
         lines, fenced_blocks = self._protect_fenced_code_blocks(lines)
 
         # Apply structural transforms only outside fenced code blocks. Bold is
@@ -83,6 +84,10 @@ class MarkdownPreprocessor:
         processed_content = '\n'.join(lines)
 
         return processed_content.strip()
+
+    def _filter_document_boundaries(self, lines: list[str]) -> list[str]:
+        """Remove leading frontmatter and trailing note metadata before document parsing."""
+        return self._filter_ending_metadata(self._filter_yaml_frontmatter(lines))
 
     @staticmethod
     def _escape_obsidian_embeds_for_pandoc(lines: list[str]) -> list[str]:
@@ -488,7 +493,7 @@ class MarkdownPreprocessor:
                 # 确保前后有空行，使其成为独立段落
                 if processed_lines and processed_lines[-1].strip() != '':
                     processed_lines.append('')
-                processed_lines.append('[PAGEBREAK]')
+                processed_lines.append(ControlTokens.PAGE_BREAK)
                 processed_lines.append('')  # 后面也加空行
             else:
                 processed_lines.append(line)

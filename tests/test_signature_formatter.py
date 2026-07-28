@@ -7,6 +7,7 @@ from docx.oxml.ns import qn
 
 from src.config import DocumentConfig
 from src.formatters.signature_formatter import SignatureFormatter
+from src.utils.constants import ControlTokens
 
 
 class TestSignatureFormatter(unittest.TestCase):
@@ -69,6 +70,24 @@ class TestSignatureFormatter(unittest.TestCase):
         self.assertFalse(date_paragraph.paragraph_format.keep_with_next)
         auto_space = date_paragraph._element.pPr.find(qn('w:autoSpaceDN'))
         self.assertEqual('true', auto_space.get(qn('w:val')))
+
+    def test_replaces_an_anchor_without_moving_following_content(self):
+        document = Document()
+        document.add_paragraph('Body')
+        anchor = document.add_paragraph(ControlTokens.SIGNATURE)
+        document.add_paragraph('Attachment declaration')
+
+        self.formatter.replace_signature_anchor(
+            anchor,
+            'Example Authority',
+            '2026\u5e747\u67081\u65e5',
+        )
+
+        self.assertEqual(
+            ['Body', '', '', 'Example Authority', '2026\u5e747\u67081\u65e5', 'Attachment declaration'],
+            [paragraph.text for paragraph in document.paragraphs],
+        )
+        self.assertNotIn(ControlTokens.SIGNATURE, [paragraph.text for paragraph in document.paragraphs])
 
 
 if __name__ == '__main__':

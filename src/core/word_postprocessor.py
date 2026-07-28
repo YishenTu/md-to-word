@@ -17,7 +17,7 @@ from ..formatters import (
     SignatureFormatter,
     TableFormatter,
 )
-from ..utils.constants import Patterns
+from ..utils.constants import ControlTokens, Patterns
 from ..utils.exceptions import FileProcessingError, ImageProcessingError
 
 
@@ -102,12 +102,7 @@ class WordPostprocessor:
         self.process_and_insert_images()
         self.image_formatter.format_images(self.doc)
 
-        if metadata.get('signatory'):
-            self.signature_formatter.add_signature(
-                self.doc,
-                metadata['signatory'],
-                metadata['document_date'],
-            )
+        self._process_signature(metadata)
 
         # 保存格式化后的文档
         self.doc.save(docx_path)
@@ -123,7 +118,7 @@ class WordPostprocessor:
         from docx.oxml.ns import qn
 
         for paragraph in self.doc.paragraphs:
-            if paragraph.text.strip() == '[PAGEBREAK]':
+            if paragraph.text.strip() == ControlTokens.PAGE_BREAK:
                 # 清空段落内容
                 paragraph.clear()
 
@@ -132,6 +127,28 @@ class WordPostprocessor:
                 br = OxmlElement('w:br')
                 br.set(qn('w:type'), 'page')
                 run._element.append(br)
+
+    def _process_signature(self, metadata: dict[str, Any]) -> None:
+        """Replace one signature position anchor with structured signature metadata."""
+        anchors = [paragraph for paragraph in self.doc.paragraphs if paragraph.text.strip() == ControlTokens.SIGNATURE]
+        signatory = metadata.get('signatory')
+        document_date = metadata.get('document_date')
+
+        if signatory is None and document_date is None:
+            if anchors:
+                raise FileProcessingError('Signature anchor is present without signature metadata')
+            return
+
+        if not isinstance(signatory, str) or not isinstance(document_date, str):
+            raise FileProcessingError('Signature metadata must include string signatory and document_date values')
+        if len(anchors) != 1:
+            raise FileProcessingError(f'Expected exactly one signature anchor, found {len(anchors)}')
+
+        self.signature_formatter.replace_signature_anchor(
+            anchors[0],
+            signatory,
+            document_date,
+        )
 
     def process_and_insert_images(self):
         """处理文档中的图片语法并插入实际图片"""
