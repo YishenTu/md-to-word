@@ -17,9 +17,11 @@ class MarkdownPreprocessor:
     CAPTION_SEARCH_AFTER = 20  # 向后查找行数
     CAPTION_MAX_EMPTY_LINES = 2  # 最大允许空行数
     FENCE_START_PATTERN = re.compile(r'^( {0,3})(`{3,}|~{3,})(.*)$')
+    H1_PATTERN = re.compile(r'^ {0,3}#[ \t]+(.+?)[ \t]*$')
     FENCE_PLACEHOLDER_PREFIX = '\ue000MD_TO_WORD_FENCE_'
     FENCE_PLACEHOLDER_SUFFIX = '\ue001'
     ATTACHMENT_HEADER_PATTERN = Patterns.ATTACHMENT_HEADER_PATTERN
+    ATTACHMENT_INLINE_PATTERN = Patterns.ATTACHMENT_INLINE_PATTERN
     ATTACHMENT_ITEM_PATTERN = Patterns.ATTACHMENT_ITEM_PATTERN
 
     def __init__(self):
@@ -48,13 +50,14 @@ class MarkdownPreprocessor:
         title_from_filename = os.path.splitext(filename)[0]
 
         lines = self._filter_document_boundaries(content.split('\n'))
+        markdown_title = self._single_h1_title(lines)
         body_content, document_fields = self.signature_block_parser.parse('\n'.join(lines))
 
         # 预处理内容
         processed_content = self._preprocess_lines(body_content.split('\n'))
 
         result = {
-            'title': title_from_filename,
+            'title': markdown_title or title_from_filename,
             'content': processed_content,
         }
         result.update(document_fields)
@@ -88,6 +91,19 @@ class MarkdownPreprocessor:
     def _filter_document_boundaries(self, lines: list[str]) -> list[str]:
         """Remove leading frontmatter and trailing note metadata before document parsing."""
         return self._filter_ending_metadata(self._filter_yaml_frontmatter(lines))
+
+    def _single_h1_title(self, lines: list[str]) -> str | None:
+        """Return the visible text of the sole level-one heading outside fenced code."""
+        protected_lines, _ = self._protect_fenced_code_blocks(lines)
+        titles = []
+        for line in protected_lines:
+            match = self.H1_PATTERN.fullmatch(line)
+            if match is None:
+                continue
+            title = re.sub(r'[ \t]+#+[ \t]*$', '', match.group(1)).strip()
+            if title:
+                titles.append(title)
+        return titles[0] if len(titles) == 1 else None
 
     @staticmethod
     def _escape_obsidian_embeds_for_pandoc(lines: list[str]) -> list[str]:
@@ -142,41 +158,75 @@ class MarkdownPreprocessor:
         return restored_lines
 
     def _normalize_attachment_sections(self, lines: list[str]) -> list[str]:
-        """Convert a natural Markdown attachment list into one aligned paragraph."""
+        """Mark attachment items as separate paragraphs for deterministic Word layout."""
         normalized_lines: list[str] = []
         line_index = 0
 
         while line_index < len(lines):
-            if self.ATTACHMENT_HEADER_PATTERN.match(lines[line_index]) is None:
+            header = lines[line_index]
+            if self.ATTACHMENT_HEADER_PATTERN.match(header) is not None:
+                item_index = line_index + 1
+                while item_index < len(lines) and not lines[item_index].strip():
+                    item_index += 1
+
+                items, next_index = self._collect_attachment_items(lines, item_index)
+                if not items:
+                    normalized_lines.append(header)
+                    line_index += 1
+                    continue
+
+                self._append_normalized_attachment_items(normalized_lines, items)
+                line_index = next_index
+                continue
+
+            inline_match = self.ATTACHMENT_INLINE_PATTERN.match(header)
+            if inline_match is None:
                 normalized_lines.append(lines[line_index])
                 line_index += 1
                 continue
 
-            item_index = line_index + 1
-            while item_index < len(lines) and not lines[item_index].strip():
-                item_index += 1
-
-            items = []
-            while item_index < len(lines):
-                item_match = self.ATTACHMENT_ITEM_PATTERN.match(lines[item_index])
-                if item_match is None:
-                    break
-                items.append((item_match.group(1), item_match.group(2).rstrip()))
-                item_index += 1
-
-            if not items:
-                normalized_lines.append(lines[line_index])
+            first_item_match = re.match(r'^\s*附件[:：]\s*(\d+)\.\s+(.+?)\s*$', header)
+            if first_item_match is None:
+                normalized_lines.append(header)
                 line_index += 1
                 continue
 
-            for item_position, (number, item_content) in enumerate(items):
-                prefix = '附件：' if item_position == 0 else '\u3000\u3000\u3000'
-                hard_break = '  ' if item_position < len(items) - 1 else ''
-                normalized_lines.append(f'{prefix}{number}. {item_content}{hard_break}')
-
-            line_index = item_index
+            items = [(first_item_match.group(1), first_item_match.group(2).rstrip())]
+            continuation_items, next_index = self._collect_attachment_items(lines, line_index + 1)
+            items.extend(continuation_items)
+            self._append_normalized_attachment_items(normalized_lines, items)
+            line_index = next_index
 
         return normalized_lines
+
+    def _collect_attachment_items(self, lines: list[str], start_index: int) -> tuple[list[tuple[str, str]], int]:
+        """Collect one contiguous sequence of numbered attachment items."""
+        items: list[tuple[str, str]] = []
+        item_index = start_index
+        while item_index < len(lines):
+            item_match = self.ATTACHMENT_ITEM_PATTERN.match(lines[item_index])
+            if item_match is None:
+                break
+            items.append((item_match.group(1), item_match.group(2).rstrip()))
+            item_index += 1
+        return items, item_index
+
+    @staticmethod
+    def _append_normalized_attachment_items(
+        normalized_lines: list[str],
+        items: list[tuple[str, str]],
+    ) -> None:
+        """Emit attachment items as marked paragraphs consumed by the Word formatter."""
+        for item_position, (number, item_content) in enumerate(items):
+            if item_position > 0:
+                normalized_lines.append('')
+            if item_position == 0:
+                marker = ControlTokens.ATTACHMENT_FIRST_ITEM
+                visible_prefix = f'附件：{number}.'
+            else:
+                marker = ControlTokens.ATTACHMENT_ITEM
+                visible_prefix = f'{number}.'
+            normalized_lines.append(f'{marker}{visible_prefix} {item_content}')
 
     def _filter_yaml_frontmatter(self, lines: list[str]) -> list[str]:
         """过滤YAML front matter"""
@@ -219,13 +269,10 @@ class MarkdownPreprocessor:
     def _skip_first_level_headers(self, lines: list[str]) -> list[str]:
         """动态检测和调整标题层级
         - 如果检测到多个一级标题（#），将所有标题层级下移
-        - 如果只有一个或没有一级标题，则跳过一级标题（使用文件名作为文档标题）
+        - 如果只有一个一级标题，则跳过该标题（其文本用作文档标题）
         """
         # 统计一级标题数量
-        h1_count = 0
-        for line in lines:
-            if line.strip().startswith('# ') and not line.strip().startswith('##'):
-                h1_count += 1
+        h1_count = sum(self.H1_PATTERN.fullmatch(line) is not None for line in lines)
 
         # 如果有多个一级标题，调整所有标题层级
         if h1_count > 1:
@@ -234,7 +281,7 @@ class MarkdownPreprocessor:
             # 原有逻辑：跳过单个一级标题
             processed_lines = []
             for line in lines:
-                if line.strip().startswith('# ') and not line.strip().startswith('##'):
+                if self.H1_PATTERN.fullmatch(line) is not None:
                     continue
                 else:
                     processed_lines.append(line)

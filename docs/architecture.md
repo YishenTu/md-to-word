@@ -19,9 +19,9 @@ Markdown file
 
 `SignatureBlockParser` inspects only the strict terminal document region after note metadata is removed. It accepts a signatory and date either at the body end or immediately before a terminal attachment declaration. When it finds an unambiguous block, it moves the values into normalized metadata and leaves one position-only signature anchor in the Markdown body. The parser has no dependency on `python-docx`; this keeps Markdown grammar separate from presentation logic.
 
-`MarkdownPreprocessor` handles transformations required by this output profile: optional frontmatter and ending metadata removal, attachment normalization, caption positioning, list normalization, heading policy, and body separators. Fenced code blocks are opaque during these transforms, and Markdown soft breaks remain Pandoc's responsibility.
+`MarkdownPreprocessor` handles transformations required by this output profile: optional frontmatter and ending metadata removal, attachment normalization into explicitly marked item paragraphs, caption positioning, list normalization, heading policy, and body separators. The paragraph formatter consumes the attachment markers after Pandoc conversion and applies the shared name position and per-item hanging indent. Fenced code blocks are opaque during these transforms, and Markdown soft breaks remain Pandoc's responsibility.
 
-Body separators and signature positions become explicit, narrowly scoped control tokens. `WordPostprocessor` consumes and removes both. The signature anchor carries no document values; the structured signatory and date remain in metadata.
+Body separators, signature positions, and normalized attachment items become explicit, narrowly scoped control tokens. `WordPostprocessor` consumes and removes them. The signature anchor carries no document values; the structured signatory and date remain in metadata.
 
 ### Pandoc stage
 
@@ -35,7 +35,7 @@ The Markdown source directory is passed as a Pandoc resource path so standard re
 
 1. `PageFormatter` applies page geometry, the document grid, default spacing, and mirrored page numbers.
 2. `ParagraphFormatter` applies body and heading layout and guarantees attachment spacing.
-3. `DocumentTitleFormatter` inserts the filename-based title.
+3. `DocumentTitleFormatter` inserts the metadata-provided title, which comes from the sole Markdown level-one heading or falls back to the filename.
 4. `ListFormatter` and `TableFormatter` normalize native Word structures.
 5. The postprocessor consumes page-break sentinels and resolves Obsidian image syntax.
 6. `ImageFormatter` sizes images, applies wrapping, and collapses anchor paragraphs before captions.

@@ -13,6 +13,7 @@ from src.config import DocumentConfig
 from src.core.markdown_preprocessor import MarkdownPreprocessor
 from src.core.pandoc_processor import PandocProcessor
 from src.core.word_postprocessor import WordPostprocessor
+from src.utils.constants import ControlTokens
 from src.utils.exceptions import ImageProcessingError, PandocError
 
 PANDOC_AVAILABLE = shutil.which('pandoc') is not None
@@ -187,6 +188,29 @@ class TestConversionPipeline(unittest.TestCase):
 
         texts = [paragraph.text for paragraph in document.paragraphs]
         self.assertEqual(1, texts.count('附件：1. 实施方案'))
+
+    def test_attachment_names_use_a_shared_wrapped_line_indent(self):
+        markdown = '正文。\n\n附件：\n\n1. 这是一个长附件名称用于验证自动换行后的名称首字对齐\n2. 项目数据明细表'
+
+        with tempfile.TemporaryDirectory() as directory:
+            document = self._convert(markdown, directory)
+
+        attachment_paragraphs = [
+            paragraph for paragraph in document.paragraphs if paragraph.text.startswith(('附件：1. ', '2. '))
+        ]
+        self.assertEqual(2, len(attachment_paragraphs))
+        expected_hanging = ('1280', '320')
+        for paragraph, hanging in zip(attachment_paragraphs, expected_hanging, strict=True):
+            indent = paragraph._element.pPr.find(qn('w:ind'))
+            self.assertEqual('1920', indent.get(qn('w:left')))
+            self.assertEqual(hanging, indent.get(qn('w:hanging')))
+            self.assertIsNone(paragraph._element.pPr.find(qn('w:tabs')))
+            self.assertEqual(Pt(0), paragraph.paragraph_format.space_before)
+            self.assertEqual(Pt(0), paragraph.paragraph_format.space_after)
+
+        all_text = '\n'.join(paragraph.text for paragraph in document.paragraphs)
+        self.assertNotIn(ControlTokens.ATTACHMENT_FIRST_ITEM, all_text)
+        self.assertNotIn(ControlTokens.ATTACHMENT_ITEM, all_text)
 
     def test_soft_breaks_and_fenced_code_preserve_text_content(self):
         markdown = 'The first line\nends here\n\n```markdown\n**bold marker**\n* list-like code\n---\n```'

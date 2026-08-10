@@ -33,12 +33,12 @@ python md_to_word.py input.md -o output.docx
 
 ### 文档标题与层级标题
 
-输出文档标题来自 Markdown 文件名，不依赖 YAML frontmatter。单个一级标题会被忽略，以免和文件名标题重复；存在多个一级标题时，转换器会将标题层级下移。常规输入建议使用：
+如果 Markdown 中恰好有一个一级标题（`# Title`），转换器会将其文本作为文档内部标题，并从正文中移除该标题；没有一级标题时才使用 Markdown 文件名。文档内部标题使用二号方正小标宋并居中排版，不依赖 YAML frontmatter。存在多个一级标题时，继续使用文件名作为文档标题，并将已编写的标题层级下移。常规输入建议使用：
 
 - `##` 表示一级标题，使用三号黑体。
 - `###` 表示二级标题，使用三号楷体。
 - 更深层级按三号仿宋正文处理。
-- 正文和层级标题的段前、段后均为 0，并对齐正文网格；文件名标题使用二号小标宋和独立的精确行距。
+- 正文和层级标题的段前、段后均为 0，并对齐正文网格；文档标题使用二号小标宋和独立的精确行距。
 
 YAML frontmatter 是可选的。存在时会被过滤，不会出现在 Word 中，也不负责驱动落款识别。
 
@@ -48,7 +48,7 @@ YAML frontmatter 是可选的。存在时会被过滤，不会出现在 Word 中
 
 ### 附件说明
 
-附件按自然 Markdown 编写即可：`附件：` 独占一行，空一行后依次写 `1.`、`2.`、`3.`。转换器会将各项合并到同一附件说明段落，用硬换行保留条目，并自动对齐第二条及后续序号；不要手工添加全角空格、制表符或行尾空格。
+附件按自然 Markdown 编写即可：`附件：` 独占一行，空一行后依次写 `1.`、`2.`、`3.`。转换器会将各项生成独立的附件说明段落，自动对齐第二条及后续序号；附件名称较长时，续行与上一行名称首字对齐。不要手工添加全角空格、制表符或行尾空格。
 
 例如：
 
@@ -127,9 +127,7 @@ python md_to_word.py --check-config
 python -m unittest discover -v
 ```
 
-GitHub Actions 在每次 push、pull request 和手工触发时运行。质量任务使用 Python 3.14 执行 Ruff、mypy 和依赖漏洞审计；测试任务在 Python 3.11 与 3.14 上安装 Pandoc、检查配置并运行全部 `unittest`。依赖 Pandoc 的本地测试在 Pandoc 不可用时自动跳过。
-
-项目结构按职责划分：`src/core/` 编排转换流程，`src/parsers/` 解析与 DOCX 无关的 Markdown 结构，`src/formatters/` 负责 Word/OpenXML 呈现，`src/config/` 保存配置，`src/utils/` 提供验证与公共工具，`tests/` 包含单元和端到端测试，`examples/` 保持自包含。
+GitHub Actions 会在 push、pull request 和手工触发时运行质量检查，并在 Python 3.11 与 3.14 上执行测试。具体任务以 [CI 工作流](.github/workflows/ci.yml) 为准；依赖 Pandoc 的本地测试在 Pandoc 不可用时自动跳过。
 
 ## 版本与许可
 

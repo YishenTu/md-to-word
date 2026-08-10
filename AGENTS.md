@@ -5,19 +5,23 @@
 - `src/core/` orchestrates `MarkdownPreprocessor` → `PandocProcessor` → `WordPostprocessor`.
 - `src/parsers/` extracts structured Markdown data without depending on DOCX APIs.
 - `src/formatters/` owns Word layout and OpenXML formatting by document element type.
-- `src/config/` contains shared layout settings; `src/utils/` contains validation, exceptions, and reusable helpers.
 - `md_to_word.py` owns CLI policy and atomic output publication; `examples/` must remain self-contained.
 
 Keep processors composable. Put Markdown interpretation in preprocessors or parsers and Word presentation in formatters. Internal control tokens must be explicit, narrowly scoped, and removed by the consuming pipeline stage; structured data such as signatures belongs in metadata instead of text markers.
 
 ## Style and maintenance
 
-- Target Python 3.11+, four-space indentation, and a 120-column limit.
-- Follow Ruff formatting and lint rules from `pyproject.toml`; use type hints for new or changed interfaces.
-- Use `snake_case` for modules, functions, and variables; `PascalCase` for classes; `UPPER_SNAKE_CASE` for constants.
+- Keep production code compatible with Python 3.11, even when developing on a newer interpreter.
+- Treat `pyproject.toml` as the source of truth for formatting, linting, and type-checking configuration; use type hints for new or changed interfaces.
 - Raise project-specific exceptions from `src/utils/exceptions.py` at pipeline boundaries.
-- Update `README.md` and relevant files in `docs/` whenever input contracts, configuration, layout, CI, or failure behavior changes.
 - Use Conventional Commits when asked to commit: `feat:`, `fix:`, `docs:`, `refactor:`, or `chore:`.
+
+## Documentation ownership
+
+- Keep `README.md` human-facing: installation, usage, Markdown authoring contracts, configuration, visible behavior, failure behavior, and contributor commands.
+- Keep detailed architecture, configuration, and security explanations in the matching file under `docs/`.
+- Keep agent-only ownership boundaries, implementation constraints, verification rules, and safety invariants in `AGENTS.md`; do not put task state, agent workflow, or temporary decisions in human-facing documentation.
+- Update every affected documentation owner when input contracts, configuration, layout, CI, architecture, security, or failure behavior changes.
 
 ## Validation
 

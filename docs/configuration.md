@@ -44,7 +44,7 @@ Word or WPS substitutes fonts that are not installed. Install the configured fon
 
 ### Frontmatter and title
 
-YAML frontmatter is optional and filtered before conversion. The document title always comes from the source filename. A single Markdown level-one heading is removed to prevent a duplicate title; multiple level-one headings cause the authored heading hierarchy to shift down by one level.
+YAML frontmatter is optional and filtered before conversion. When the document contains exactly one Markdown level-one heading, its visible text becomes the internal document title and that heading is removed from the body. Otherwise, the title falls back to the source filename. Multiple level-one headings cause the authored heading hierarchy to shift down by one level. The generated internal title uses the configured size-two `xiaobiaosong` font and centered title layout.
 
 ### Page breaks
 
@@ -58,7 +58,7 @@ Markdown `-` and `*` items become native Word bullet lists with a controlled `�
 
 ### Attachment declarations
 
-Write `附件：` on its own line, followed by a blank line and a contiguous ordered list. The preprocessor merges those items into one paragraph separated by hard line breaks. It provides the alignment spaces for the second and later items, and the paragraph formatter guarantees one grid-aligned blank line before the declaration. Authored alignment spaces, tabs, or extra blank lines are unnecessary.
+Write `附件：` on its own line, followed by a blank line and a contiguous ordered list. The preprocessor marks each item as a separate attachment paragraph. The paragraph formatter aligns all item names at one fixed character-grid position, so wrapped lines begin under the first character of the name while later item numbers remain aligned. It also guarantees one grid-aligned blank line before the declaration. Authored alignment spaces, tabs, or extra blank lines are unnecessary.
 
 ### Stamped-document signature
 

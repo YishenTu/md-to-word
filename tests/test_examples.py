@@ -32,16 +32,26 @@ class TestBundledExamples(unittest.TestCase):
         self.assertEqual(2, len(anchors))
         self.assertEqual(2, len(page_breaks))
         self.assertGreaterEqual(len(document.tables), 1)
-        attachment_text = '附件：1. 示例实施方案\n　　　2. 项目数据明细表\n　　　3. 项目验收检查清单'
-        self.assertEqual(1, texts.count(attachment_text))
-        attachment_paragraph = next(paragraph for paragraph in document.paragraphs if paragraph.text == attachment_text)
-        self.assertEqual(2, len(attachment_paragraph._element.xpath('.//w:br')))
-        self.assertEqual(WD_ALIGN_PARAGRAPH.LEFT, attachment_paragraph.alignment)
-        self.assertEqual(Pt(32), attachment_paragraph.paragraph_format.left_indent)
-        self.assertEqual(Pt(0), attachment_paragraph.paragraph_format.first_line_indent)
+        attachment_texts = (
+            '附件：1. 示例实施方案',
+            '2. 项目数据明细表',
+            '3. 项目验收检查清单',
+        )
+        self.assertTrue(all(texts.count(attachment_text) == 1 for attachment_text in attachment_texts))
+        attachment_paragraphs = [
+            next(paragraph for paragraph in document.paragraphs if paragraph.text == attachment_text)
+            for attachment_text in attachment_texts
+        ]
+        for paragraph in attachment_paragraphs:
+            self.assertEqual(WD_ALIGN_PARAGRAPH.LEFT, paragraph.alignment)
+            self.assertEqual(Pt(96), paragraph.paragraph_format.left_indent)
+            self.assertIsNone(paragraph._element.pPr.find(qn('w:tabs')))
+        self.assertEqual(Pt(-64), attachment_paragraphs[0].paragraph_format.first_line_indent)
+        for paragraph in attachment_paragraphs[1:]:
+            self.assertEqual(Pt(-16), paragraph.paragraph_format.first_line_indent)
 
         attachment_index = next(
-            index for index, paragraph in enumerate(document.paragraphs) if paragraph.text == attachment_text
+            index for index, paragraph in enumerate(document.paragraphs) if paragraph.text == attachment_texts[0]
         )
         attachment_spacing = document.paragraphs[attachment_index - 1]
         self.assertEqual('', attachment_spacing.text)
@@ -74,6 +84,8 @@ class TestBundledExamples(unittest.TestCase):
             document.paragraphs[date_index]._element.pPr.find(qn('w:autoSpaceDN')).get(qn('w:val')),
         )
         self.assertNotIn(ControlTokens.SIGNATURE, texts)
+        self.assertFalse(any(ControlTokens.ATTACHMENT_FIRST_ITEM in text for text in texts))
+        self.assertFalse(any(ControlTokens.ATTACHMENT_ITEM in text for text in texts))
         self.assertNotIn('#example', texts)
         self.assertIn('图1. 项目实施流程 Project workflow', texts)
         self.assertIn('图2. 项目评估与数据复核 Project review', texts)

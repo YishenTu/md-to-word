@@ -14,6 +14,12 @@ class UnorderedListConfig(TypedDict):
     nested_step_chars: int
 
 
+class AttachmentListConfig(TypedDict):
+    first_marker_position_chars: int
+    subsequent_marker_position_chars: int
+    text_position_chars: int
+
+
 class TableConfig(TypedDict):
     auto_fit: bool
     auto_fit_mode: str
@@ -93,6 +99,13 @@ class DocumentConfig:
         'marker_position_chars': 2,
         'text_gap_chars': 1,
         'nested_step_chars': 2,
+    }
+
+    # Attachment positions are measured from the text-area edge in body-character cells.
+    ATTACHMENT_LIST: AttachmentListConfig = {
+        'first_marker_position_chars': 2,
+        'subsequent_marker_position_chars': 5,
+        'text_position_chars': 6,
     }
 
     # 对齐方式

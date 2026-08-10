@@ -56,8 +56,8 @@ class TestSignatureBlockParser(unittest.TestCase):
         self.assertEqual(
             (
                 f'Body.\n\n{ControlTokens.SIGNATURE}\n\n'
-                '附件：1. Implementation plan  \n'
-                '\u3000\u3000\u30002. Acceptance checklist'
+                f'{ControlTokens.ATTACHMENT_FIRST_ITEM}附件：1. Implementation plan\n\n'
+                f'{ControlTokens.ATTACHMENT_ITEM}2. Acceptance checklist'
             ),
             result['content'],
         )
@@ -79,7 +79,10 @@ class TestSignatureBlockParser(unittest.TestCase):
 
         self.assertEqual('Example Authority', result['signatory'])
         self.assertEqual(
-            f'Body.\n\n{ControlTokens.SIGNATURE}\n\n附件：1. Implementation plan',
+            (
+                f'Body.\n\n{ControlTokens.SIGNATURE}\n\n'
+                f'{ControlTokens.ATTACHMENT_FIRST_ITEM}附件：1. Implementation plan'
+            ),
             result['content'],
         )
 

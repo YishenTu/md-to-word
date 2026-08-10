@@ -5,6 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from docx import Document
+from docx.oxml.ns import qn
+from docx.shared import Pt
 
 from md_to_word import convert_document, resolve_output_path
 from src.utils.exceptions import ImageProcessingError
@@ -68,6 +70,24 @@ class TestCliConversion(unittest.TestCase):
                 {'input.md', 'output.docx'},
                 {path.name for path in root.iterdir()},
             )
+
+    @unittest.skipUnless(shutil.which('pandoc'), 'Pandoc is required for CLI integration tests')
+    def test_single_h1_overrides_filename_as_the_formatted_document_title(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path = root / 'filename-title.md'
+            output_path = root / 'output.docx'
+            input_path.write_text('# Markdown Title\n\nBody.', encoding='utf-8')
+
+            convert_document(input_path, output_path)
+            document = Document(output_path)
+
+        title = document.paragraphs[0]
+        self.assertEqual('Markdown Title', title.text)
+        self.assertNotIn('# Markdown Title', [paragraph.text for paragraph in document.paragraphs])
+        self.assertEqual(Pt(22), title.runs[0].font.size)
+        run_fonts = title.runs[0]._element.rPr.find(qn('w:rFonts'))
+        self.assertEqual('FZXiaoBiaoSong-B05S', run_fonts.get(qn('w:eastAsia')))
 
 
 if __name__ == '__main__':

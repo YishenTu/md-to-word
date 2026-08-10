@@ -2,6 +2,7 @@
 段落格式化器 - 负责标题和正文段落的格式化
 """
 
+import re
 from typing import Any
 
 from docx.document import Document
@@ -9,7 +10,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
-from ..utils.constants import Patterns
+from ..utils.constants import ControlTokens, Patterns
 from .base_formatter import BaseFormatter
 
 
@@ -34,7 +35,7 @@ class ParagraphFormatter(BaseFormatter):
     def _ensure_attachment_spacing(self, doc: Document) -> None:
         """Ensure one grid-aligned blank line before every attachment declaration."""
         for paragraph in list(doc.paragraphs):
-            if not self._is_attachment_paragraph(paragraph):
+            if not self._is_attachment_first_item(paragraph):
                 continue
 
             previous_element = paragraph._element.getprevious()
@@ -48,9 +49,22 @@ class ParagraphFormatter(BaseFormatter):
             self._format_blank_grid_line(blank_paragraph)
 
     @staticmethod
-    def _is_attachment_paragraph(paragraph: Paragraph) -> bool:
+    def _is_attachment_first_item(paragraph: Paragraph) -> bool:
         """Return whether a paragraph starts an attachment declaration."""
-        return paragraph.text.lstrip().startswith(('附件：', '附件:'))
+        text = paragraph.text.lstrip()
+        return text.startswith((ControlTokens.ATTACHMENT_FIRST_ITEM, '附件：', '附件:'))
+
+    @staticmethod
+    def _attachment_item_kind(paragraph: Paragraph) -> str | None:
+        """Return the marked attachment item kind, including legacy compact declarations."""
+        text = paragraph.text.lstrip()
+        if text.startswith(ControlTokens.ATTACHMENT_FIRST_ITEM):
+            return 'first'
+        if text.startswith(ControlTokens.ATTACHMENT_ITEM):
+            return 'subsequent'
+        if text.startswith(('附件：', '附件:')):
+            return 'first'
+        return None
 
     @staticmethod
     def _is_empty_paragraph(paragraph: Paragraph) -> bool:
@@ -159,6 +173,10 @@ class ParagraphFormatter(BaseFormatter):
 
     def _format_body_paragraph(self, paragraph):
         """格式化正文段落"""
+        attachment_item_kind = self._attachment_item_kind(paragraph)
+        if attachment_item_kind is not None:
+            self._prepare_attachment_item(paragraph, attachment_item_kind)
+
         # 检查是否包含数学公式
         if self._has_math_formula(paragraph):
             # 如果包含数学公式，使用特殊的格式化方法
@@ -175,10 +193,9 @@ class ParagraphFormatter(BaseFormatter):
 
         # 设置段落格式
         paragraph_format = paragraph.paragraph_format
-        if self._is_attachment_paragraph(paragraph):
+        if attachment_item_kind is not None:
             paragraph.alignment = self.config.ALIGNMENTS['left']
-            paragraph_format.left_indent = self.config.FIRST_LINE_INDENT
-            paragraph_format.first_line_indent = Pt(0)
+            self._set_attachment_indent(paragraph, attachment_item_kind)
         else:
             paragraph.alignment = self.config.ALIGNMENTS['justify']
             paragraph_format.left_indent = Pt(0)
@@ -188,6 +205,40 @@ class ParagraphFormatter(BaseFormatter):
 
         # 启用文档网格对齐
         self._enable_snap_to_grid(paragraph)
+
+    def _prepare_attachment_item(self, paragraph: Paragraph, item_kind: str) -> None:
+        """Consume the layout token and retain one marker-to-name separator."""
+        text = paragraph.text.lstrip()
+        if item_kind == 'first':
+            text = text.removeprefix(ControlTokens.ATTACHMENT_FIRST_ITEM)
+            match = re.match(r'^(附件[:：]\s*\d+\.)\s+(.+)$', text)
+        else:
+            text = text.removeprefix(ControlTokens.ATTACHMENT_ITEM)
+            match = re.match(r'^(\d+\.)\s+(.+)$', text)
+
+        if match is None:
+            return
+
+        marker, item_name = match.groups()
+        paragraph.clear()
+        paragraph.add_run(f'{marker} ')
+        paragraph.add_run(item_name)
+
+    def _set_attachment_indent(self, paragraph: Paragraph, item_kind: str) -> None:
+        """Align every wrapped line with the first character of the attachment name."""
+        settings = self.config.ATTACHMENT_LIST
+        character_width_pt = self.config.FONT_SIZES['body'].pt
+        text_position_pt = settings['text_position_chars'] * character_width_pt
+        marker_position_chars = (
+            settings['first_marker_position_chars']
+            if item_kind == 'first'
+            else settings['subsequent_marker_position_chars']
+        )
+        marker_position_pt = marker_position_chars * character_width_pt
+
+        paragraph_format = paragraph.paragraph_format
+        paragraph_format.left_indent = Pt(text_position_pt)
+        paragraph_format.first_line_indent = Pt(marker_position_pt - text_position_pt)
 
     def _format_paragraph_with_math(self, paragraph, level: int, is_heading: bool):
         """格式化包含数学公式的段落，保留数学公式内容"""
