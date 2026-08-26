@@ -12,7 +12,13 @@
 
 ## 安装
 
-需要 Python 3.11 或更高版本，以及可从 `PATH` 调用的 [Pandoc](https://pandoc.org/installing.html)。运行依赖安装命令如下：
+需要 Python 3.11 或更高版本，以及可从 `PATH` 调用的 [Pandoc](https://pandoc.org/installing.html)。推荐使用 [uv](https://docs.astral.sh/uv/) 管理环境，仓库已提交 `uv.lock` 锁定全部依赖版本：
+
+```bash
+uv sync
+```
+
+也可以使用标准工具链创建虚拟环境并安装运行依赖：
 
 ```bash
 python3 -m venv .venv
@@ -110,9 +116,12 @@ Obsidian 路径可通过以下环境变量覆盖：
 
 ## 开发与 CI
 
-安装固定版本的开发工具：
+安装固定版本的开发工具。使用 uv 时，`uv sync` 默认同时安装 `dev` 依赖组（ruff、mypy、pip-audit）；使用标准工具链时单独安装：
 
 ```bash
+# uv（推荐）：
+uv sync
+# 标准工具链：
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 

@@ -25,7 +25,7 @@ Keep processors composable. Put Markdown interpretation in preprocessors or pars
 
 ## Validation
 
-- Install development tools: `python -m pip install -r requirements.txt -r requirements-dev.txt`.
+- Install development tools: `uv sync` (preferred; installs the `dev` dependency group) or `python -m pip install -r requirements.txt -r requirements-dev.txt`.
 - Run lint and formatting checks: `ruff check .` and `ruff format --check .`.
 - Run type checking: `mypy`.
 - Audit runtime dependencies: `pip-audit -r requirements.txt`.
